@@ -1,0 +1,235 @@
+"use server";
+
+import { and, eq } from "drizzle-orm";
+import { revalidatePath } from "next/cache";
+import { redirect } from "next/navigation";
+import { z } from "zod";
+import { db } from "@/db";
+import {
+  resources,
+  resourceType,
+  studySessions,
+  topics,
+  topicStatus,
+} from "@/db/schema";
+import { todayISO } from "@/lib/format";
+import { sanitizeNote } from "@/lib/sanitize";
+
+// ---------- Helpers ----------
+
+const optionalText = z
+  .string()
+  .trim()
+  .transform((v) => (v === "" ? null : v))
+  .nullable()
+  .optional();
+
+const id = z.coerce.number().int().positive();
+
+function parse<T extends z.ZodType>(schema: T, formData: FormData): z.infer<T> {
+  const result = schema.safeParse(Object.fromEntries(formData));
+  if (!result.success) {
+    throw new Error(result.error.issues.map((i) => i.message).join(", "));
+  }
+  return result.data;
+}
+
+function refresh(topicId?: number) {
+  revalidatePath("/");
+  revalidatePath("/topics");
+  if (topicId) revalidatePath(`/topics/${topicId}`);
+}
+
+// ---------- Topik ----------
+
+const topicSchema = z.object({
+  title: z.string().trim().min(1, "Judul topik wajib diisi").max(200),
+  category: optionalText,
+  description: optionalText,
+  status: z.enum(topicStatus.enumValues).default("todo"),
+});
+
+export async function createTopic(formData: FormData) {
+  const data = parse(topicSchema, formData);
+  const [row] = await db
+    .insert(topics)
+    .values({ ...data, completedAt: data.status === "done" ? new Date() : null })
+    .returning({ id: topics.id });
+  refresh();
+  redirect(`/topics/${row.id}`);
+}
+
+export async function updateTopic(formData: FormData) {
+  const { id: topicId, ...data } = parse(topicSchema.extend({ id }), formData);
+  await db
+    .update(topics)
+    .set({
+      ...data,
+      updatedAt: new Date(),
+      completedAt: data.status === "done" ? new Date() : null,
+    })
+    .where(eq(topics.id, topicId));
+  refresh(topicId);
+}
+
+export async function setTopicStatus(formData: FormData) {
+  const { id: topicId, status } = parse(
+    z.object({ id, status: z.enum(topicStatus.enumValues) }),
+    formData,
+  );
+  await db
+    .update(topics)
+    .set({ status, updatedAt: new Date(), completedAt: status === "done" ? new Date() : null })
+    .where(eq(topics.id, topicId));
+  refresh(topicId);
+}
+
+export async function deleteTopic(formData: FormData) {
+  const { id: topicId } = parse(z.object({ id }), formData);
+  await db.delete(topics).where(eq(topics.id, topicId));
+  refresh();
+  redirect("/topics");
+}
+
+// ---------- Sesi belajar ----------
+
+const sessionSchema = z.object({
+  topicId: id,
+  title: z.string().trim().min(1, "Judul sesi wajib diisi").max(200),
+  date: z.iso.date("Format tanggal tidak valid").default(() => todayISO()),
+  durationMinutes: z.coerce
+    .number({ error: "Durasi wajib diisi" })
+    .int()
+    .min(1, "Durasi minimal 1 menit")
+    .max(24 * 60, "Durasi maksimal 24 jam"),
+  note: z.string().max(100_000, "Catatan terlalu panjang").optional(),
+});
+
+const sessionResourceSchema = z.object({
+  title: z.string().trim().min(1, "Judul resource wajib diisi").max(200),
+  url: z.url("URL resource tidak valid"),
+  type: z.enum(resourceType.enumValues).default("other"),
+});
+
+export type ActionResult = { ok: true } | { ok: false; error: string };
+
+type SessionResource = z.infer<typeof sessionResourceSchema>;
+
+/** Baca resource dari field berulang: resourceTitle, resourceUrl, resourceType */
+function parseSessionResources(formData: FormData): SessionResource[] | { error: string } {
+  const titles = formData.getAll("resourceTitle").map(String);
+  const urls = formData.getAll("resourceUrl").map(String);
+  const types = formData.getAll("resourceType").map(String);
+  const links: SessionResource[] = [];
+  for (let i = 0; i < titles.length; i++) {
+    // Baris yang judul & URL-nya kosong diabaikan
+    if (!titles[i]?.trim() && !urls[i]?.trim()) continue;
+    const r = sessionResourceSchema.safeParse({
+      title: titles[i] || urls[i],
+      url: urls[i],
+      type: types[i] || undefined,
+    });
+    if (!r.success) return { error: `Resource #${i + 1}: ${r.error.issues[0].message}` };
+    links.push(r.data);
+  }
+  return links;
+}
+
+/**
+ * Catat sesi + resource-nya. Mengembalikan hasil (bukan throw) supaya
+ * pesan error bisa ditampilkan langsung di form.
+ * Resource dikirim sebagai field berulang: resourceTitle, resourceUrl, resourceType.
+ */
+export async function logSession(formData: FormData): Promise<ActionResult> {
+  const parsed = sessionSchema.safeParse(Object.fromEntries(formData));
+  if (!parsed.success) return { ok: false, error: parsed.error.issues[0].message };
+  const { note, ...data } = parsed.data;
+
+  const links = parseSessionResources(formData);
+  if ("error" in links) return { ok: false, error: links.error };
+
+  await db.transaction(async (tx) => {
+    const [session] = await tx
+      .insert(studySessions)
+      .values({ ...data, note: note ? sanitizeNote(note) : null })
+      .returning({ id: studySessions.id });
+
+    if (links.length) {
+      await tx
+        .insert(resources)
+        .values(links.map((l) => ({ ...l, topicId: data.topicId, sessionId: session.id })));
+    }
+
+    // Topik yang baru dicatat sesinya otomatis jadi "sedang dipelajari"
+    const [topic] = await tx
+      .select({ status: topics.status })
+      .from(topics)
+      .where(eq(topics.id, data.topicId));
+    await tx
+      .update(topics)
+      .set({
+        updatedAt: new Date(),
+        ...(topic?.status === "todo" ? { status: "in_progress" as const } : {}),
+      })
+      .where(eq(topics.id, data.topicId));
+  });
+
+  refresh(data.topicId);
+  return { ok: true };
+}
+
+/** Edit sesi yang sudah ada: judul, catatan, durasi, tanggal + resource baru */
+export async function updateSession(formData: FormData): Promise<ActionResult> {
+  const parsed = sessionSchema.extend({ id }).safeParse(Object.fromEntries(formData));
+  if (!parsed.success) return { ok: false, error: parsed.error.issues[0].message };
+  const { id: sessionId, topicId, note, ...data } = parsed.data;
+
+  const links = parseSessionResources(formData);
+  if ("error" in links) return { ok: false, error: links.error };
+
+  const updated = await db.transaction(async (tx) => {
+    const rows = await tx
+      .update(studySessions)
+      .set({ ...data, note: note ? sanitizeNote(note) : null })
+      // topicId ikut dicek supaya sesi topik lain tidak bisa diubah lewat form ini
+      .where(and(eq(studySessions.id, sessionId), eq(studySessions.topicId, topicId)))
+      .returning({ id: studySessions.id });
+    if (!rows.length) return false;
+
+    if (links.length) {
+      await tx.insert(resources).values(links.map((l) => ({ ...l, topicId, sessionId })));
+    }
+    await tx.update(topics).set({ updatedAt: new Date() }).where(eq(topics.id, topicId));
+    return true;
+  });
+
+  if (!updated) return { ok: false, error: "Sesi tidak ditemukan" };
+  refresh(topicId);
+  return { ok: true };
+}
+
+export async function deleteSession(formData: FormData) {
+  const { id: sessionId, topicId } = parse(z.object({ id, topicId: id }), formData);
+  await db.delete(studySessions).where(eq(studySessions.id, sessionId));
+  refresh(topicId);
+}
+
+// ---------- Resource ----------
+
+export async function toggleResource(formData: FormData) {
+  const { id: resourceId, topicId, done } = parse(
+    z.object({ id, topicId: id, done: z.enum(["true", "false"]) }),
+    formData,
+  );
+  await db
+    .update(resources)
+    .set({ done: done === "true" })
+    .where(eq(resources.id, resourceId));
+  refresh(topicId);
+}
+
+export async function deleteResource(formData: FormData) {
+  const { id: resourceId, topicId } = parse(z.object({ id, topicId: id }), formData);
+  await db.delete(resources).where(eq(resources.id, resourceId));
+  refresh(topicId);
+}

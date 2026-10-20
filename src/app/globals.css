@@ -1,0 +1,192 @@
+@import "tailwindcss";
+
+/* Palet "buku catatan": kertas hangat, tinta gelap, aksen hijau lumut */
+@theme {
+  --color-paper: #f5f3ee;
+  --color-card: #fffefb;
+  --color-ink: #1d1c1a;
+  --color-muted: #6d6a63;
+  --color-line: #e3dfd6;
+  --color-accent: #2f6b4f;
+  --color-accent-soft: #dcebe2;
+  --color-warm: #c2731c;
+  --color-warm-soft: #f6e6d2;
+  --color-danger: #b4372f;
+
+  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-mono: ui-monospace, "SF Mono", "Cascadia Code", "JetBrains Mono", Menlo, monospace;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --color-paper: #151513;
+    --color-card: #1d1d1a;
+    --color-ink: #ecebe6;
+    --color-muted: #9a978f;
+    --color-line: #2e2d29;
+    --color-accent: #6fbf94;
+    --color-accent-soft: #1f3529;
+    --color-warm: #e49a4a;
+    --color-warm-soft: #3a2a18;
+    --color-danger: #e2685f;
+  }
+}
+
+body {
+  background: var(--color-paper);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+@layer components {
+  .card {
+    @apply rounded-xl border border-line bg-card;
+  }
+  .input {
+    @apply w-full rounded-lg border border-line bg-paper px-3 py-2 text-sm text-ink outline-none transition placeholder:text-muted/70 focus:border-accent focus:ring-2 focus:ring-accent/20;
+  }
+  .label {
+    @apply mb-1 block text-xs font-medium tracking-wide text-muted uppercase;
+  }
+  .btn-primary {
+    @apply inline-flex items-center justify-center gap-1.5 rounded-lg px-3.5 py-2 text-sm font-medium transition disabled:cursor-not-allowed disabled:opacity-60 bg-accent text-card hover:brightness-110;
+  }
+  .btn-ghost {
+    @apply inline-flex items-center justify-center gap-1.5 rounded-lg px-3.5 py-2 text-sm font-medium transition disabled:cursor-not-allowed disabled:opacity-60 border border-line text-ink hover:bg-paper;
+  }
+  .num {
+    @apply font-mono tabular-nums;
+  }
+}
+
+/* ---------- Rich text: editor (.rte-content) & tampilan catatan (.note-content) ---------- */
+:root {
+  --code-bg: #23221f;
+  --code-fg: #e9e6dd;
+  --hl-keyword: #e49a6b;
+  --hl-string: #a7c98a;
+  --hl-number: #d7a5e8;
+  --hl-comment: #8a877f;
+  --hl-title: #8fc3e8;
+  --hl-attr: #e8cf8f;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --code-bg: #0f0f0e;
+  }
+}
+
+.rte-content > * + *,
+.note-content > * + * {
+  margin-top: 0.5em;
+}
+.rte-content h2,
+.note-content h2 {
+  font-size: 1.15rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+.rte-content h3,
+.note-content h3 {
+  font-size: 1rem;
+  font-weight: 600;
+}
+.rte-content ul,
+.note-content ul {
+  list-style: disc;
+  padding-left: 1.4em;
+}
+.rte-content ol,
+.note-content ol {
+  list-style: decimal;
+  padding-left: 1.4em;
+}
+.rte-content li > p,
+.note-content li > p {
+  margin: 0;
+}
+.rte-content blockquote,
+.note-content blockquote {
+  border-left: 3px solid var(--color-line);
+  padding-left: 0.8em;
+  color: var(--color-muted);
+}
+.rte-content hr,
+.note-content hr {
+  border-color: var(--color-line);
+}
+.rte-content :not(pre) > code,
+.note-content :not(pre) > code {
+  font-family: var(--font-mono);
+  font-size: 0.85em;
+  background: var(--color-line);
+  border-radius: 4px;
+  padding: 0.1em 0.35em;
+}
+.rte-content pre,
+.note-content pre {
+  position: relative;
+  background: var(--code-bg);
+  color: var(--code-fg);
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  line-height: 1.6;
+  border: 1px solid color-mix(in srgb, var(--color-line) 60%, transparent);
+  border-radius: 8px;
+  padding: 0.75em 1em;
+  overflow-x: auto;
+  tab-size: 2;
+}
+.note-content pre[data-lang]:not([data-lang=""]) {
+  padding-top: 1.9em;
+}
+.note-content pre[data-lang]:not([data-lang=""])::after {
+  content: attr(data-lang);
+  position: absolute;
+  top: 0.5em;
+  right: 0.6em;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--hl-comment);
+}
+.rte-content pre code,
+.note-content pre code {
+  background: none;
+  padding: 0;
+  font-size: inherit;
+}
+.rte-content p.is-editor-empty:first-child::before {
+  content: attr(data-placeholder);
+  color: color-mix(in srgb, var(--color-muted) 70%, transparent);
+  float: left;
+  height: 0;
+  pointer-events: none;
+}
+
+/* Syntax highlighting (highlight.js / lowlight) */
+.hljs-keyword,
+.hljs-selector-tag,
+.hljs-built_in,
+.hljs-literal,
+.hljs-type { color: var(--hl-keyword); }
+.hljs-string,
+.hljs-regexp,
+.hljs-symbol,
+.hljs-template-tag { color: var(--hl-string); }
+.hljs-number,
+.hljs-variable,
+.hljs-template-variable { color: var(--hl-number); }
+.hljs-comment,
+.hljs-quote,
+.hljs-meta { color: var(--hl-comment); font-style: italic; }
+.hljs-title,
+.hljs-section,
+.hljs-name,
+.hljs-function { color: var(--hl-title); }
+.hljs-attr,
+.hljs-attribute,
+.hljs-property,
+.hljs-params,
+.hljs-selector-class { color: var(--hl-attr); }
