@@ -10,6 +10,7 @@ const links = [
 
 export function Nav() {
   const pathname = usePathname();
+  if (pathname === "/login") return null;
   return (
     <nav className="flex items-center gap-1">
       {links.map((l) => {

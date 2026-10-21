@@ -14,8 +14,18 @@ import {
 } from "@/db/schema";
 import { todayISO } from "@/lib/format";
 import { sanitizeNote } from "@/lib/sanitize";
+import { auth } from "@/auth";
 
 // ---------- Helpers ----------
+
+/**
+ * Server action bisa dipanggil langsung lewat HTTP, jadi selain proxy.ts
+ * setiap action juga mengecek login sendiri (defense in depth).
+ */
+async function requireUser() {
+  const session = await auth();
+  if (!session?.user) throw new Error("Silakan login terlebih dahulu");
+}
 
 const optionalText = z
   .string()
@@ -50,6 +60,7 @@ const topicSchema = z.object({
 });
 
 export async function createTopic(formData: FormData) {
+  await requireUser();
   const data = parse(topicSchema, formData);
   const [row] = await db
     .insert(topics)
@@ -60,6 +71,7 @@ export async function createTopic(formData: FormData) {
 }
 
 export async function updateTopic(formData: FormData) {
+  await requireUser();
   const { id: topicId, ...data } = parse(topicSchema.extend({ id }), formData);
   await db
     .update(topics)
@@ -73,6 +85,7 @@ export async function updateTopic(formData: FormData) {
 }
 
 export async function setTopicStatus(formData: FormData) {
+  await requireUser();
   const { id: topicId, status } = parse(
     z.object({ id, status: z.enum(topicStatus.enumValues) }),
     formData,
@@ -85,6 +98,7 @@ export async function setTopicStatus(formData: FormData) {
 }
 
 export async function deleteTopic(formData: FormData) {
+  await requireUser();
   const { id: topicId } = parse(z.object({ id }), formData);
   await db.delete(topics).where(eq(topics.id, topicId));
   refresh();
@@ -141,6 +155,7 @@ function parseSessionResources(formData: FormData): SessionResource[] | { error:
  * Resource dikirim sebagai field berulang: resourceTitle, resourceUrl, resourceType.
  */
 export async function logSession(formData: FormData): Promise<ActionResult> {
+  await requireUser();
   const parsed = sessionSchema.safeParse(Object.fromEntries(formData));
   if (!parsed.success) return { ok: false, error: parsed.error.issues[0].message };
   const { note, ...data } = parsed.data;
@@ -180,6 +195,7 @@ export async function logSession(formData: FormData): Promise<ActionResult> {
 
 /** Edit sesi yang sudah ada: judul, catatan, durasi, tanggal + resource baru */
 export async function updateSession(formData: FormData): Promise<ActionResult> {
+  await requireUser();
   const parsed = sessionSchema.extend({ id }).safeParse(Object.fromEntries(formData));
   if (!parsed.success) return { ok: false, error: parsed.error.issues[0].message };
   const { id: sessionId, topicId, note, ...data } = parsed.data;
@@ -209,6 +225,7 @@ export async function updateSession(formData: FormData): Promise<ActionResult> {
 }
 
 export async function deleteSession(formData: FormData) {
+  await requireUser();
   const { id: sessionId, topicId } = parse(z.object({ id, topicId: id }), formData);
   await db.delete(studySessions).where(eq(studySessions.id, sessionId));
   refresh(topicId);
@@ -217,6 +234,7 @@ export async function deleteSession(formData: FormData) {
 // ---------- Resource ----------
 
 export async function toggleResource(formData: FormData) {
+  await requireUser();
   const { id: resourceId, topicId, done } = parse(
     z.object({ id, topicId: id, done: z.enum(["true", "false"]) }),
     formData,
@@ -229,6 +247,7 @@ export async function toggleResource(formData: FormData) {
 }
 
 export async function deleteResource(formData: FormData) {
+  await requireUser();
   const { id: resourceId, topicId } = parse(z.object({ id, topicId: id }), formData);
   await db.delete(resources).where(eq(resources.id, resourceId));
   refresh(topicId);

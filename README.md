@@ -61,5 +61,6 @@ src/
 ## Catatan
 
 - Timezone default `Asia/Jakarta` (untuk menentukan "hari ini" & streak). Bisa diubah dengan env `APP_TIMEZONE`.
-- Aplikasi ini single-user tanpa login. Jangan deploy ke publik tanpa menambahkan autentikasi (misal Auth.js), karena siapa pun yang punya URL bisa mengubah data.
-- Kalau mau deploy, database bisa dipindah ke Postgres terkelola (Neon, Supabase, Railway) cukup dengan mengganti `DATABASE_URL`.
+- Login memakai Auth.js + GitHub. Hanya username di `AUTH_ALLOWED_GITHUB` yang bisa masuk; semua halaman dan server action wajib login (`src/proxy.ts` + `requireUser()` di `actions.ts`).
+- `npm run db:check` untuk mengecek koneksi database & isi tabel.
+- Database bisa di Postgres terkelola (Neon, Supabase, Railway) cukup dengan mengganti `DATABASE_URL`. Jalankan impor data / `pg_dump` lewat koneksi langsung, bukan pooler.
