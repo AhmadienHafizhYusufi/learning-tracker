@@ -15,6 +15,7 @@ import { StatusBadge } from "@/components/status-badge";
 import { TopicFields } from "@/components/topic-fields";
 import { formatMinutes, hostOf, RESOURCE_LABEL } from "@/lib/format";
 import { getCategories, getTopic } from "@/lib/queries";
+import { requirePageUser } from "@/lib/session";
 
 export const dynamic = "force-dynamic";
 
@@ -23,7 +24,9 @@ export default async function TopicDetailPage({ params }: { params: Promise<{ id
   const topicId = Number(id);
   if (!Number.isInteger(topicId) || topicId <= 0) notFound();
 
-  const [data, categories] = await Promise.all([getTopic(topicId), getCategories()]);
+  const userId = await requirePageUser();
+  // Topik milik user lain → 404 (sama seperti topik yang tidak ada)
+  const [data, categories] = await Promise.all([getTopic(userId, topicId), getCategories(userId)]);
   if (!data) notFound();
   const { topic, sessions, unattachedResources, resourceCount, resourceDone, totalMinutes } = data;
 

@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
-import { auth, signIn } from "@/auth";
+import { getUserId, signIn } from "@/auth";
 import { SubmitButton } from "@/components/form-controls";
 
 export const dynamic = "force-dynamic";
@@ -14,7 +14,7 @@ export default async function LoginPage({
 }: {
   searchParams: Promise<{ error?: string }>;
 }) {
-  if (await auth()) redirect("/");
+  if (await getUserId()) redirect("/");
   const { error } = await searchParams;
 
   return (
@@ -24,7 +24,7 @@ export default async function LoginPage({
           L
         </span>
         <h1 className="mt-4 text-xl font-semibold tracking-tight">Masuk ke Learning Tracker</h1>
-        <p className="mt-1 text-sm text-muted">Aplikasi pribadi — hanya pemilik yang bisa masuk.</p>
+        <p className="mt-1 text-sm text-muted">Catat topik, sesi, dan resource belajarmu. Data setiap akun terpisah.</p>
 
         {error && (
           <p role="alert" className="mt-4 rounded-lg bg-danger/10 px-3 py-2 text-sm text-danger">

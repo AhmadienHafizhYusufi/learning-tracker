@@ -4,7 +4,8 @@ import { NextResponse } from "next/server";
 import { auth } from "@/auth";
 
 export default auth((req) => {
-  if (!req.auth) {
+  // Cookie login lama tanpa user id (sebelum multi-user) → wajib login ulang
+  if (!req.auth?.user?.id) {
     const url = new URL("/login", req.nextUrl.origin);
     return NextResponse.redirect(url);
   }

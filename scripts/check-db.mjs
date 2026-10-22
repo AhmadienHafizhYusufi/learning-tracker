@@ -18,7 +18,7 @@ try {
     where table_schema = 'public' order by 1`;
   console.log("Tabel:", tables.map((r) => r.table_name));
 
-  for (const name of ["topics", "study_sessions", "resources"]) {
+  for (const name of ["users", "topics", "study_sessions", "resources"]) {
     try {
       const [r] = await sql`select count(*)::int as c from ${sql(name)}`;
       console.log(`  ${name}: ${r.c} baris`);

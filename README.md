@@ -61,6 +61,8 @@ src/
 ## Catatan
 
 - Timezone default `Asia/Jakarta` (untuk menentukan "hari ini" & streak). Bisa diubah dengan env `APP_TIMEZONE`.
-- Login memakai Auth.js + GitHub. Hanya username di `AUTH_ALLOWED_GITHUB` yang bisa masuk; semua halaman dan server action wajib login (`src/proxy.ts` + `requireUser()` di `actions.ts`).
+- **Multi-user:** login dengan GitHub, akun dibuat otomatis di tabel `users`. Setiap tabel data punya `user_id`; semua query di `src/lib/queries.ts` menerima `userId`, dan setiap server action memfilter `id = ? AND user_id = ?` — user tidak bisa membaca/mengubah data user lain walaupun menebak ID.
+- `AUTH_ALLOWED_GITHUB` (opsional) membatasi siapa yang boleh mendaftar. Kosong = terbuka untuk semua akun GitHub.
+- Upgrade dari versi single-user: jalankan `npm run db:migrate-multiuser -- <username-github>` **sebelum** `npm run db:push`.
 - `npm run db:check` untuk mengecek koneksi database & isi tabel.
 - Database bisa di Postgres terkelola (Neon, Supabase, Railway) cukup dengan mengganti `DATABASE_URL`. Jalankan impor data / `pg_dump` lewat koneksi langsung, bukan pooler.

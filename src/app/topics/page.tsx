@@ -6,6 +6,7 @@ import { AutoSubmitSelect, SubmitButton } from "@/components/form-controls";
 import { TopicFields } from "@/components/topic-fields";
 import { formatDate, formatMinutes, STATUS_LABEL, STATUS_ORDER } from "@/lib/format";
 import { getCategories, getTopicsWithStats } from "@/lib/queries";
+import { requirePageUser } from "@/lib/session";
 
 export const dynamic = "force-dynamic";
 
@@ -25,7 +26,8 @@ export default async function TopicsPage({
     ? (sp.status as TopicStatus)
     : undefined;
 
-  const [all, categories] = await Promise.all([getTopicsWithStats(), getCategories()]);
+  const userId = await requirePageUser();
+  const [all, categories] = await Promise.all([getTopicsWithStats(userId), getCategories(userId)]);
   const category = sp.category && categories.includes(sp.category) ? sp.category : undefined;
 
   const filtered = all

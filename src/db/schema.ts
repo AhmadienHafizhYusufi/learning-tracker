@@ -1,6 +1,7 @@
 import {
   boolean,
   date,
+  index,
   integer,
   pgEnum,
   pgTable,
@@ -19,9 +20,32 @@ export const resourceType = pgEnum("resource_type", [
   "other",
 ]);
 
+/** Pengguna aplikasi — dibuat otomatis saat pertama kali login dengan GitHub */
+export const users = pgTable("users", {
+  id: serial("id").primaryKey(),
+  // ID numerik GitHub: tidak berubah walau username diganti
+  githubId: text("github_id").notNull().unique(),
+  login: text("login").notNull(),
+  name: text("name"),
+  image: text("image"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  lastLoginAt: timestamp("last_login_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+/*
+ * Setiap tabel data punya user_id. Sesi & resource sebenarnya bisa ditelusuri
+ * lewat topik, tapi user_id langsung di tiap tabel membuat filter kepemilikan
+ * sederhana dan sulit terlewat: WHERE id = ? AND user_id = ?
+ */
+const ownerColumn = () =>
+  integer("user_id")
+    .notNull()
+    .references(() => users.id, { onDelete: "cascade" });
+
 /** Topik / materi yang sedang dipelajari */
 export const topics = pgTable("topics", {
   id: serial("id").primaryKey(),
+  userId: ownerColumn(),
   title: text("title").notNull(),
   description: text("description"),
   category: text("category"),
@@ -29,11 +53,12 @@ export const topics = pgTable("topics", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   completedAt: timestamp("completed_at", { withTimezone: true }),
-});
+}, (t) => [index("topics_user_id_idx").on(t.userId)]);
 
 /** Log tiap sesi belajar */
 export const studySessions = pgTable("study_sessions", {
   id: serial("id").primaryKey(),
+  userId: ownerColumn(),
   topicId: integer("topic_id")
     .notNull()
     .references(() => topics.id, { onDelete: "cascade" }),
@@ -42,11 +67,12 @@ export const studySessions = pgTable("study_sessions", {
   durationMinutes: integer("duration_minutes").notNull(),
   note: text("note"), // HTML dari rich text editor (disanitasi saat disimpan)
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-});
+}, (t) => [index("study_sessions_user_id_idx").on(t.userId)]);
 
 /** Link course, artikel, video, dll — dilampirkan ke sesi belajar */
 export const resources = pgTable("resources", {
   id: serial("id").primaryKey(),
+  userId: ownerColumn(),
   topicId: integer("topic_id")
     .notNull()
     .references(() => topics.id, { onDelete: "cascade" }),
@@ -57,8 +83,9 @@ export const resources = pgTable("resources", {
   type: resourceType("type").notNull().default("other"),
   done: boolean("done").notNull().default(false),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-});
+}, (t) => [index("resources_user_id_idx").on(t.userId)]);
 
+export type User = typeof users.$inferSelect;
 export type Topic = typeof topics.$inferSelect;
 export type StudySession = typeof studySessions.$inferSelect;
 export type Resource = typeof resources.$inferSelect;

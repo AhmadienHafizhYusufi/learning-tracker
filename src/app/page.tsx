@@ -3,11 +3,13 @@ import { ActivityChart } from "@/components/activity-chart";
 import { LogSessionForm } from "@/components/log-session-form";
 import { formatDate, formatMinutes } from "@/lib/format";
 import { getAllTopicOptions, getDashboard } from "@/lib/queries";
+import { requirePageUser } from "@/lib/session";
 
 export const dynamic = "force-dynamic";
 
 export default async function DashboardPage() {
-  const [d, topicOptions] = await Promise.all([getDashboard(), getAllTopicOptions()]);
+  const userId = await requirePageUser();
+  const [d, topicOptions] = await Promise.all([getDashboard(userId), getAllTopicOptions(userId)]);
   const openTopics = topicOptions.filter((t) => t.status !== "done");
 
   return (

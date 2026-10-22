@@ -14,17 +14,30 @@ import {
 } from "@/db/schema";
 import { todayISO } from "@/lib/format";
 import { sanitizeNote } from "@/lib/sanitize";
-import { auth } from "@/auth";
+import { getUserId } from "@/auth";
 
 // ---------- Helpers ----------
 
 /**
- * Server action bisa dipanggil langsung lewat HTTP, jadi selain proxy.ts
- * setiap action juga mengecek login sendiri (defense in depth).
+ * Server action bisa dipanggil langsung lewat HTTP dengan ID apa saja,
+ * jadi setiap action:
+ *  1. mengambil userId dari session (bukan dari form!), dan
+ *  2. menyaring setiap UPDATE/DELETE dengan `id = ? AND user_id = ?`,
+ * sehingga user tidak bisa menyentuh data milik user lain.
  */
-async function requireUser() {
-  const session = await auth();
-  if (!session?.user) throw new Error("Silakan login terlebih dahulu");
+async function requireUser(): Promise<number> {
+  const userId = await getUserId();
+  if (!userId) throw new Error("Silakan login terlebih dahulu");
+  return userId;
+}
+
+/** Pastikan topik ada dan milik user ini */
+async function ownsTopic(userId: number, topicId: number) {
+  const [row] = await db
+    .select({ id: topics.id })
+    .from(topics)
+    .where(and(eq(topics.id, topicId), eq(topics.userId, userId)));
+  return Boolean(row);
 }
 
 const optionalText = z
@@ -60,18 +73,18 @@ const topicSchema = z.object({
 });
 
 export async function createTopic(formData: FormData) {
-  await requireUser();
+  const userId = await requireUser();
   const data = parse(topicSchema, formData);
   const [row] = await db
     .insert(topics)
-    .values({ ...data, completedAt: data.status === "done" ? new Date() : null })
+    .values({ ...data, userId, completedAt: data.status === "done" ? new Date() : null })
     .returning({ id: topics.id });
   refresh();
   redirect(`/topics/${row.id}`);
 }
 
 export async function updateTopic(formData: FormData) {
-  await requireUser();
+  const userId = await requireUser();
   const { id: topicId, ...data } = parse(topicSchema.extend({ id }), formData);
   await db
     .update(topics)
@@ -80,12 +93,12 @@ export async function updateTopic(formData: FormData) {
       updatedAt: new Date(),
       completedAt: data.status === "done" ? new Date() : null,
     })
-    .where(eq(topics.id, topicId));
+    .where(and(eq(topics.id, topicId), eq(topics.userId, userId)));
   refresh(topicId);
 }
 
 export async function setTopicStatus(formData: FormData) {
-  await requireUser();
+  const userId = await requireUser();
   const { id: topicId, status } = parse(
     z.object({ id, status: z.enum(topicStatus.enumValues) }),
     formData,
@@ -93,14 +106,14 @@ export async function setTopicStatus(formData: FormData) {
   await db
     .update(topics)
     .set({ status, updatedAt: new Date(), completedAt: status === "done" ? new Date() : null })
-    .where(eq(topics.id, topicId));
+    .where(and(eq(topics.id, topicId), eq(topics.userId, userId)));
   refresh(topicId);
 }
 
 export async function deleteTopic(formData: FormData) {
-  await requireUser();
+  const userId = await requireUser();
   const { id: topicId } = parse(z.object({ id }), formData);
-  await db.delete(topics).where(eq(topics.id, topicId));
+  await db.delete(topics).where(and(eq(topics.id, topicId), eq(topics.userId, userId)));
   refresh();
   redirect("/topics");
 }
@@ -155,7 +168,7 @@ function parseSessionResources(formData: FormData): SessionResource[] | { error:
  * Resource dikirim sebagai field berulang: resourceTitle, resourceUrl, resourceType.
  */
 export async function logSession(formData: FormData): Promise<ActionResult> {
-  await requireUser();
+  const userId = await requireUser();
   const parsed = sessionSchema.safeParse(Object.fromEntries(formData));
   if (!parsed.success) return { ok: false, error: parsed.error.issues[0].message };
   const { note, ...data } = parsed.data;
@@ -163,30 +176,35 @@ export async function logSession(formData: FormData): Promise<ActionResult> {
   const links = parseSessionResources(formData);
   if ("error" in links) return { ok: false, error: links.error };
 
+  // topicId datang dari form → pastikan topiknya milik user ini
+  if (!(await ownsTopic(userId, data.topicId))) return { ok: false, error: "Topik tidak ditemukan" };
+
   await db.transaction(async (tx) => {
     const [session] = await tx
       .insert(studySessions)
-      .values({ ...data, note: note ? sanitizeNote(note) : null })
+      .values({ ...data, userId, note: note ? sanitizeNote(note) : null })
       .returning({ id: studySessions.id });
 
     if (links.length) {
       await tx
         .insert(resources)
-        .values(links.map((l) => ({ ...l, topicId: data.topicId, sessionId: session.id })));
+        .values(
+          links.map((l) => ({ ...l, userId, topicId: data.topicId, sessionId: session.id })),
+        );
     }
 
     // Topik yang baru dicatat sesinya otomatis jadi "sedang dipelajari"
     const [topic] = await tx
       .select({ status: topics.status })
       .from(topics)
-      .where(eq(topics.id, data.topicId));
+      .where(and(eq(topics.id, data.topicId), eq(topics.userId, userId)));
     await tx
       .update(topics)
       .set({
         updatedAt: new Date(),
         ...(topic?.status === "todo" ? { status: "in_progress" as const } : {}),
       })
-      .where(eq(topics.id, data.topicId));
+      .where(and(eq(topics.id, data.topicId), eq(topics.userId, userId)));
   });
 
   refresh(data.topicId);
@@ -195,7 +213,7 @@ export async function logSession(formData: FormData): Promise<ActionResult> {
 
 /** Edit sesi yang sudah ada: judul, catatan, durasi, tanggal + resource baru */
 export async function updateSession(formData: FormData): Promise<ActionResult> {
-  await requireUser();
+  const userId = await requireUser();
   const parsed = sessionSchema.extend({ id }).safeParse(Object.fromEntries(formData));
   if (!parsed.success) return { ok: false, error: parsed.error.issues[0].message };
   const { id: sessionId, topicId, note, ...data } = parsed.data;
@@ -208,14 +226,23 @@ export async function updateSession(formData: FormData): Promise<ActionResult> {
       .update(studySessions)
       .set({ ...data, note: note ? sanitizeNote(note) : null })
       // topicId ikut dicek supaya sesi topik lain tidak bisa diubah lewat form ini
-      .where(and(eq(studySessions.id, sessionId), eq(studySessions.topicId, topicId)))
+      .where(
+        and(
+          eq(studySessions.id, sessionId),
+          eq(studySessions.topicId, topicId),
+          eq(studySessions.userId, userId),
+        ),
+      )
       .returning({ id: studySessions.id });
     if (!rows.length) return false;
 
     if (links.length) {
-      await tx.insert(resources).values(links.map((l) => ({ ...l, topicId, sessionId })));
+      await tx.insert(resources).values(links.map((l) => ({ ...l, userId, topicId, sessionId })));
     }
-    await tx.update(topics).set({ updatedAt: new Date() }).where(eq(topics.id, topicId));
+    await tx
+      .update(topics)
+      .set({ updatedAt: new Date() })
+      .where(and(eq(topics.id, topicId), eq(topics.userId, userId)));
     return true;
   });
 
@@ -225,16 +252,18 @@ export async function updateSession(formData: FormData): Promise<ActionResult> {
 }
 
 export async function deleteSession(formData: FormData) {
-  await requireUser();
+  const userId = await requireUser();
   const { id: sessionId, topicId } = parse(z.object({ id, topicId: id }), formData);
-  await db.delete(studySessions).where(eq(studySessions.id, sessionId));
+  await db
+    .delete(studySessions)
+    .where(and(eq(studySessions.id, sessionId), eq(studySessions.userId, userId)));
   refresh(topicId);
 }
 
 // ---------- Resource ----------
 
 export async function toggleResource(formData: FormData) {
-  await requireUser();
+  const userId = await requireUser();
   const { id: resourceId, topicId, done } = parse(
     z.object({ id, topicId: id, done: z.enum(["true", "false"]) }),
     formData,
@@ -242,13 +271,15 @@ export async function toggleResource(formData: FormData) {
   await db
     .update(resources)
     .set({ done: done === "true" })
-    .where(eq(resources.id, resourceId));
+    .where(and(eq(resources.id, resourceId), eq(resources.userId, userId)));
   refresh(topicId);
 }
 
 export async function deleteResource(formData: FormData) {
-  await requireUser();
+  const userId = await requireUser();
   const { id: resourceId, topicId } = parse(z.object({ id, topicId: id }), formData);
-  await db.delete(resources).where(eq(resources.id, resourceId));
+  await db
+    .delete(resources)
+    .where(and(eq(resources.id, resourceId), eq(resources.userId, userId)));
   refresh(topicId);
 }

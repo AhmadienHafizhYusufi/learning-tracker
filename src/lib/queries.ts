@@ -1,5 +1,5 @@
 import "server-only";
-import { asc, desc, eq, gte, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gte, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { resources, studySessions, topics, type TopicStatus } from "@/db/schema";
 import { shiftDate, todayISO } from "./format";
@@ -10,6 +10,8 @@ import { computeStreak, dailyTotals } from "./stats";
 // Catatan: nama tabel ditulis eksplisit ("topics"."id") karena Drizzle tidak
 // menambahkan prefix tabel pada query satu tabel — tanpa prefix, subquery
 // akan membandingkan kolom milik tabelnya sendiri.
+// Subquery ini aman tanpa filter user_id karena dikorelasikan ke "topics"."id",
+// dan topik yang dipilih sudah difilter per user di query utama.
 const topicAggregates = {
   totalMinutes: sql<number>`coalesce((select sum(ss.duration_minutes) from study_sessions ss where ss.topic_id = "topics"."id"), 0)`.mapWith(Number),
   sessionCount: sql<number>`(select count(*) from study_sessions ss where ss.topic_id = "topics"."id")`.mapWith(Number),
@@ -18,7 +20,12 @@ const topicAggregates = {
   lastStudied: sql<string | null>`(select max(ss.date)::text from study_sessions ss where ss.topic_id = "topics"."id")`,
 };
 
-export async function getTopicsWithStats(status?: TopicStatus) {
+/*
+ * ATURAN: setiap fungsi di file ini WAJIB menerima `userId` dan memfilter
+ * dengan kolom user_id. Jangan pernah membuat query tanpa filter user.
+ */
+
+export async function getTopicsWithStats(userId: number, status?: TopicStatus) {
   return db
     .select({
       id: topics.id,
@@ -29,42 +36,51 @@ export async function getTopicsWithStats(status?: TopicStatus) {
       ...topicAggregates,
     })
     .from(topics)
-    .where(status ? eq(topics.status, status) : undefined)
+    .where(and(eq(topics.userId, userId), status ? eq(topics.status, status) : undefined))
     .orderBy(desc(topics.updatedAt));
 }
 
 export type TopicWithStats = Awaited<ReturnType<typeof getTopicsWithStats>>[number];
 
-export async function getAllTopicOptions() {
+export async function getAllTopicOptions(userId: number) {
   return db
     .select({ id: topics.id, title: topics.title, status: topics.status })
     .from(topics)
+    .where(eq(topics.userId, userId))
     .orderBy(asc(topics.title));
 }
 
-export async function getCategories() {
+export async function getCategories(userId: number) {
   const rows = await db
     .selectDistinct({ category: topics.category })
     .from(topics)
-    .where(sql`${topics.category} is not null and ${topics.category} <> ''`)
+    .where(
+      and(
+        eq(topics.userId, userId),
+        sql`${topics.category} is not null and ${topics.category} <> ''`,
+      ),
+    )
     .orderBy(asc(topics.category));
   return rows.map((r) => r.category!);
 }
 
-export async function getTopic(id: number) {
-  const [topic] = await db.select().from(topics).where(eq(topics.id, id));
+export async function getTopic(userId: number, id: number) {
+  const [topic] = await db
+    .select()
+    .from(topics)
+    .where(and(eq(topics.id, id), eq(topics.userId, userId)));
   if (!topic) return null;
 
   const [sessions, links] = await Promise.all([
     db
       .select()
       .from(studySessions)
-      .where(eq(studySessions.topicId, id))
+      .where(and(eq(studySessions.topicId, id), eq(studySessions.userId, userId)))
       .orderBy(desc(studySessions.date), desc(studySessions.createdAt)),
     db
       .select()
       .from(resources)
-      .where(eq(resources.topicId, id))
+      .where(and(eq(resources.topicId, id), eq(resources.userId, userId)))
       .orderBy(asc(resources.createdAt)),
   ]);
 
@@ -87,7 +103,7 @@ export async function getTopic(id: number) {
   };
 }
 
-export async function getDashboard() {
+export async function getDashboard(userId: number) {
   const today = todayISO();
   const from14 = shiftDate(today, -13);
 
@@ -95,6 +111,7 @@ export async function getDashboard() {
     db
       .select({ status: topics.status, count: sql<number>`count(*)`.mapWith(Number) })
       .from(topics)
+      .where(eq(topics.userId, userId))
       .groupBy(topics.status),
     db
       .select({
@@ -102,16 +119,20 @@ export async function getDashboard() {
         sessionCount: sql<number>`count(*)`.mapWith(Number),
         weekMinutes: sql<number>`coalesce(sum(${studySessions.durationMinutes}) filter (where ${studySessions.date} >= ${shiftDate(today, -6)}), 0)`.mapWith(Number),
       })
-      .from(studySessions),
+      .from(studySessions)
+      .where(eq(studySessions.userId, userId)),
     db
       .select({
         date: sql<string>`${studySessions.date}::text`,
         minutes: sql<number>`sum(${studySessions.durationMinutes})`.mapWith(Number),
       })
       .from(studySessions)
-      .where(gte(studySessions.date, from14))
+      .where(and(eq(studySessions.userId, userId), gte(studySessions.date, from14)))
       .groupBy(studySessions.date),
-    db.selectDistinct({ date: sql<string>`${studySessions.date}::text` }).from(studySessions),
+    db
+      .selectDistinct({ date: sql<string>`${studySessions.date}::text` })
+      .from(studySessions)
+      .where(eq(studySessions.userId, userId)),
     db
       .select({
         id: studySessions.id,
@@ -124,9 +145,10 @@ export async function getDashboard() {
       })
       .from(studySessions)
       .innerJoin(topics, eq(studySessions.topicId, topics.id))
+      .where(eq(studySessions.userId, userId))
       .orderBy(desc(studySessions.date), desc(studySessions.createdAt))
       .limit(6),
-    getTopicsWithStats("in_progress"),
+    getTopicsWithStats(userId, "in_progress"),
   ]);
 
   const count = (s: TopicStatus) => statusCounts.find((r) => r.status === s)?.count ?? 0;
