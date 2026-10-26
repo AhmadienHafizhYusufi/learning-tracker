@@ -67,9 +67,11 @@ export const RichTextEditor = forwardRef<
   }));
 
   return (
-    <div className="overflow-hidden rounded-lg border border-line bg-paper transition focus-within:border-accent focus-within:ring-2 focus-within:ring-accent/20">
-      {editor ? <Toolbar editor={editor} /> : <div className="h-10 border-b border-line" />}
+    // Tanpa overflow-hidden supaya tooltip tombol tidak terpotong
+    <div className="rounded-lg border border-line bg-paper transition focus-within:border-accent focus-within:ring-2 focus-within:ring-accent/20">
       <EditorContent editor={editor} />
+      {/* Toolbar di bawah & sticky: tetap terlihat di bawah layar walau catatannya panjang */}
+      {editor ? <Toolbar editor={editor} /> : <div className="h-10 rounded-b-lg border-t border-line bg-card" />}
       <input type="hidden" name={name} value={html} />
     </div>
   );
@@ -79,7 +81,32 @@ function escapeHtml(s: string) {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/\n/g, "<br>");
 }
 
+/**
+ * Shortcut bawaan Tiptap (dicek dari source extension-nya).
+ * "Mod" = Ctrl di Windows/Linux, ⌘ di Mac.
+ */
+const SHORTCUTS = {
+  bold: ["Mod", "B"],
+  italic: ["Mod", "I"],
+  underline: ["Mod", "U"],
+  strike: ["Mod", "Shift", "S"],
+  h1: ["Mod", "Alt", "2"], // tombol "H1" = heading level 2 di HTML
+  h2: ["Mod", "Alt", "3"],
+  bullet: ["Mod", "Shift", "8"],
+  ordered: ["Mod", "Shift", "7"],
+  quote: ["Mod", "Shift", "B"],
+  code: ["Mod", "E"],
+  codeBlock: ["Mod", "Alt", "C"],
+  undo: ["Mod", "Z"],
+  redo: ["Mod", "Shift", "Z"],
+} as const;
+
+type ShortcutKey = keyof typeof SHORTCUTS;
+
 function Toolbar({ editor }: { editor: Editor }) {
+  // Toolbar hanya dirender di browser (setelah editor siap), jadi aman membaca navigator
+  const isMac = typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform);
+
   // Re-render toolbar hanya saat state format berubah
   const s = useEditorState({
     editor,
@@ -102,44 +129,47 @@ function Toolbar({ editor }: { editor: Editor }) {
   });
 
   const chain = () => editor.chain().focus();
+  const btn = (key: ShortcutKey) => ({ keys: SHORTCUTS[key], isMac });
 
   return (
-    <div className="flex flex-wrap items-center gap-0.5 border-b border-line bg-card px-1.5 py-1">
-      <Btn label="Tebal (Ctrl+B)" active={s.bold} onClick={() => chain().toggleBold().run()}>
+    <div className="sticky bottom-0 z-10 flex flex-wrap items-center gap-0.5 rounded-b-lg border-t border-line bg-card px-1.5 py-1">
+      <Btn {...btn("bold")} label="Tebal" hint="atau ketik **teks**" align="start" active={s.bold} onClick={() => chain().toggleBold().run()}>
         <b>B</b>
       </Btn>
-      <Btn label="Miring (Ctrl+I)" active={s.italic} onClick={() => chain().toggleItalic().run()}>
+      <Btn {...btn("italic")} label="Miring" hint="atau ketik *teks*" active={s.italic} onClick={() => chain().toggleItalic().run()}>
         <i className="font-serif">I</i>
       </Btn>
-      <Btn label="Garis bawah (Ctrl+U)" active={s.underline} onClick={() => chain().toggleUnderline().run()}>
+      <Btn {...btn("underline")} label="Garis bawah" active={s.underline} onClick={() => chain().toggleUnderline().run()}>
         <u>U</u>
       </Btn>
-      <Btn label="Coret" active={s.strike} onClick={() => chain().toggleStrike().run()}>
+      <Btn {...btn("strike")} label="Coret" hint="atau ketik ~~teks~~" active={s.strike} onClick={() => chain().toggleStrike().run()}>
         <s>S</s>
       </Btn>
       <Sep />
-      <Btn label="Judul" active={s.h2} onClick={() => chain().toggleHeading({ level: 2 }).run()}>
+      <Btn {...btn("h1")} label="Judul" hint="atau ketik ## di awal baris" active={s.h2} onClick={() => chain().toggleHeading({ level: 2 }).run()}>
         H1
       </Btn>
-      <Btn label="Subjudul" active={s.h3} onClick={() => chain().toggleHeading({ level: 3 }).run()}>
+      <Btn {...btn("h2")} label="Subjudul" hint="atau ketik ### di awal baris" active={s.h3} onClick={() => chain().toggleHeading({ level: 3 }).run()}>
         H2
       </Btn>
       <Sep />
-      <Btn label="Daftar poin" active={s.bullet} onClick={() => chain().toggleBulletList().run()}>
+      <Btn {...btn("bullet")} label="Daftar poin" hint="atau ketik - di awal baris" active={s.bullet} onClick={() => chain().toggleBulletList().run()}>
         <ListIcon />
       </Btn>
-      <Btn label="Daftar bernomor" active={s.ordered} onClick={() => chain().toggleOrderedList().run()}>
+      <Btn {...btn("ordered")} label="Daftar bernomor" hint="atau ketik 1. di awal baris" active={s.ordered} onClick={() => chain().toggleOrderedList().run()}>
         <span className="num text-[11px]">1.</span>
       </Btn>
-      <Btn label="Kutipan" active={s.quote} onClick={() => chain().toggleBlockquote().run()}>
+      <Btn {...btn("quote")} label="Kutipan" hint="atau ketik > di awal baris" active={s.quote} onClick={() => chain().toggleBlockquote().run()}>
         <span className="font-serif text-base leading-none">&ldquo;</span>
       </Btn>
       <Sep />
-      <Btn label="Kode inline (Ctrl+E)" active={s.code} onClick={() => chain().toggleCode().run()}>
+      <Btn {...btn("code")} label="Kode inline" hint="atau ketik `teks`" active={s.code} onClick={() => chain().toggleCode().run()}>
         <span className="num text-[11px]">`x`</span>
       </Btn>
       <Btn
+        {...btn("codeBlock")}
         label="Blok kode"
+        hint="atau ketik ``` lalu spasi"
         active={s.codeBlock}
         wide
         onClick={() => chain().toggleCodeBlock().run()}
@@ -162,10 +192,10 @@ function Toolbar({ editor }: { editor: Editor }) {
         </select>
       )}
       <div className="ml-auto flex gap-0.5">
-        <Btn label="Urungkan (Ctrl+Z)" disabled={!s.canUndo} onClick={() => chain().undo().run()}>
+        <Btn {...btn("undo")} label="Urungkan" align="end" disabled={!s.canUndo} onClick={() => chain().undo().run()}>
           ↶
         </Btn>
-        <Btn label="Ulangi (Ctrl+Y)" disabled={!s.canRedo} onClick={() => chain().redo().run()}>
+        <Btn {...btn("redo")} label="Ulangi" align="end" disabled={!s.canRedo} onClick={() => chain().redo().run()}>
           ↷
         </Btn>
       </div>
@@ -173,9 +203,20 @@ function Toolbar({ editor }: { editor: Editor }) {
   );
 }
 
+function formatKey(key: string, isMac: boolean) {
+  if (key === "Mod") return isMac ? "⌘" : "Ctrl";
+  if (key === "Alt") return isMac ? "⌥" : "Alt";
+  if (key === "Shift") return isMac ? "⇧" : "Shift";
+  return key;
+}
+
 function Btn({
   children,
   label,
+  keys,
+  isMac,
+  hint,
+  align = "center",
   active,
   disabled,
   wide,
@@ -183,25 +224,57 @@ function Btn({
 }: {
   children: ReactNode;
   label: string;
+  keys: readonly string[];
+  isMac: boolean;
+  /** Cara alternatif (markdown) — ditampilkan kecil di tooltip */
+  hint?: string;
+  /** Posisi tooltip relatif terhadap tombol, supaya tidak keluar layar di tepi */
+  align?: "start" | "center" | "end";
   active?: boolean;
   disabled?: boolean;
   wide?: boolean;
   onClick: () => void;
 }) {
+  const shortcut = keys.map((k) => formatKey(k, isMac)).join(isMac ? "" : "+");
+  const position =
+    align === "start" ? "left-0" : align === "end" ? "right-0" : "left-1/2 -translate-x-1/2";
+
   return (
-    <button
-      type="button"
-      title={label}
-      aria-label={label}
-      aria-pressed={active}
-      disabled={disabled}
-      onClick={onClick}
-      className={`inline-flex h-7 items-center justify-center gap-1 rounded-md text-sm transition disabled:opacity-35 ${
-        wide ? "px-2" : "w-7"
-      } ${active ? "bg-ink text-paper" : "text-ink hover:bg-paper"}`}
-    >
-      {children}
-    </button>
+    <span className="group/tip relative inline-flex">
+      <button
+        type="button"
+        aria-label={`${label} (${shortcut})`}
+        aria-keyshortcuts={keys.map((k) => (k === "Mod" ? (isMac ? "Meta" : "Control") : k)).join("+")}
+        aria-pressed={active}
+        disabled={disabled}
+        onClick={onClick}
+        className={`inline-flex h-7 items-center justify-center gap-1 rounded-md text-sm transition disabled:opacity-35 ${
+          wide ? "px-2" : "w-7"
+        } ${active ? "bg-ink text-paper" : "text-ink hover:bg-paper"}`}
+      >
+        {children}
+      </button>
+      {/* Tooltip: muncul di atas tombol saat hover atau fokus keyboard */}
+      <span
+        role="tooltip"
+        className={`pointer-events-none absolute bottom-full z-20 mb-2 w-max max-w-56 rounded-md bg-ink px-2.5 py-1.5 text-left text-xs text-paper opacity-0 shadow-lg transition-opacity delay-0 group-hover/tip:opacity-100 group-hover/tip:delay-300 group-has-[:focus-visible]/tip:opacity-100 ${position}`}
+      >
+        <span className="flex items-center gap-2">
+          <span className="font-medium">{label}</span>
+          <span className="flex gap-0.5">
+            {keys.map((k) => (
+              <kbd
+                key={k}
+                className="rounded border border-paper/25 bg-paper/10 px-1 font-mono text-[10px] leading-4"
+              >
+                {formatKey(k, isMac)}
+              </kbd>
+            ))}
+          </span>
+        </span>
+        {hint && <span className="mt-0.5 block text-[11px] text-paper/70">{hint}</span>}
+      </span>
+    </span>
   );
 }
 
