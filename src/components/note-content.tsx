@@ -1,6 +1,7 @@
 import "server-only";
 import { toHtml } from "hast-util-to-html";
 import { common, createLowlight } from "lowlight";
+import { addHeadingIds } from "@/lib/headings";
 
 const lowlight = createLowlight(common);
 
@@ -32,13 +33,15 @@ function highlightCodeBlocks(html: string) {
  * Render catatan (HTML yang sudah disanitasi saat disimpan).
  * Catatan lama berupa teks polos tetap tampil normal.
  */
-export function NoteContent({ html }: { html: string }) {
+export function NoteContent({ html, sessionId }: { html: string; sessionId?: number }) {
   const isHtml = /^\s*</.test(html);
   if (!isHtml) return <p className="note-content text-sm whitespace-pre-wrap">{html}</p>;
   return (
     <div
       className="note-content text-sm"
-      dangerouslySetInnerHTML={{ __html: highlightCodeBlocks(html) }}
+      dangerouslySetInnerHTML={{
+        __html: highlightCodeBlocks(sessionId ? addHeadingIds(html, sessionId) : html),
+      }}
     />
   );
 }

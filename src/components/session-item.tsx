@@ -36,6 +36,7 @@ export function SessionItem({
   if (editing) {
     return (
       <li
+        id={`sesi-${session.id}`}
         ref={sortable?.setNodeRef}
         style={sortable?.style}
         className="rounded-lg border border-accent/60 bg-accent-soft/20 p-4"
@@ -48,6 +49,7 @@ export function SessionItem({
 
   return (
     <li
+      id={`sesi-${session.id}`}
       ref={sortable?.setNodeRef}
       style={sortable?.style}
       className={`group relative rounded-lg border bg-card p-4 ${

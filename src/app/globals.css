@@ -190,3 +190,8 @@ body {
 .hljs-property,
 .hljs-params,
 .hljs-selector-class { color: var(--hl-attr); }
+
+/* Target link daftar isi tidak tertutup header sticky */
+[id] {
+  scroll-margin-top: 5.5rem;
+}
