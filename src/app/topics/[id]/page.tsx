@@ -10,7 +10,7 @@ import type { Resource } from "@/db/schema";
 import { ConfirmButton, SubmitButton } from "@/components/form-controls";
 import { LogSessionForm } from "@/components/log-session-form";
 import { NoteContent } from "@/components/note-content";
-import { SessionItem } from "@/components/session-item";
+import { SortableSessionList } from "@/components/sortable-session-list";
 import { StatusBadge } from "@/components/status-badge";
 import { TopicFields } from "@/components/topic-fields";
 import { formatMinutes, hostOf, RESOURCE_LABEL } from "@/lib/format";
@@ -84,31 +84,37 @@ export default async function TopicDetailPage({ params }: { params: Promise<{ id
         <LogSessionForm topicId={topic.id} />
 
         {sessions.length ? (
-          <ol className="mt-6 space-y-3 border-t border-line pt-5">
-            {sessions.map((s) => (
-              <SessionItem
-                key={s.id}
-                topicId={topic.id}
-                session={{
+          <div className="mt-6 border-t border-line pt-4">
+            <SortableSessionList
+              topicId={topic.id}
+              entries={sessions.map((s) => ({
+                session: {
                   id: s.id,
                   title: s.title,
                   note: s.note,
                   durationMinutes: s.durationMinutes,
                   date: s.date,
-                }}
-              >
-                {s.note && (
-                  <div className="mt-3">
-                    <NoteContent html={s.note} />
-                  </div>
-                )}
-
-                {s.resources.length > 0 && (
-                  <ResourceList resources={s.resources} topicId={topic.id} className="mt-3 border-t border-line pt-2" />
-                )}
-              </SessionItem>
-            ))}
-          </ol>
+                },
+                // Dirender di server, lalu diteruskan ke komponen client sebagai ReactNode
+                content: (
+                  <>
+                    {s.note && (
+                      <div className="mt-3">
+                        <NoteContent html={s.note} />
+                      </div>
+                    )}
+                    {s.resources.length > 0 && (
+                      <ResourceList
+                        resources={s.resources}
+                        topicId={topic.id}
+                        className="mt-3 border-t border-line pt-2"
+                      />
+                    )}
+                  </>
+                ),
+              }))}
+            />
+          </div>
         ) : (
           <p className="mt-6 border-t border-line pt-4 text-sm text-muted">Belum ada sesi untuk topik ini.</p>
         )}

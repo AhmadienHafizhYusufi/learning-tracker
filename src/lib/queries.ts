@@ -76,7 +76,8 @@ export async function getTopic(userId: number, id: number) {
       .select()
       .from(studySessions)
       .where(and(eq(studySessions.topicId, id), eq(studySessions.userId, userId)))
-      .orderBy(desc(studySessions.date), desc(studySessions.createdAt)),
+      // Urutan manual (drag & drop) dulu, lalu yang terbaru di atas
+      .orderBy(asc(studySessions.position), desc(studySessions.date), desc(studySessions.createdAt)),
     db
       .select()
       .from(resources)

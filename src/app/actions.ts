@@ -1,6 +1,6 @@
 "use server";
 
-import { and, eq } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
@@ -180,9 +180,15 @@ export async function logSession(formData: FormData): Promise<ActionResult> {
   if (!(await ownsTopic(userId, data.topicId))) return { ok: false, error: "Topik tidak ditemukan" };
 
   await db.transaction(async (tx) => {
+    // Sesi baru ditaruh paling atas: posisinya 1 lebih kecil dari posisi terkecil di topik ini
+    const [{ minPos }] = await tx
+      .select({ minPos: sql<number>`coalesce(min(${studySessions.position}), 0)`.mapWith(Number) })
+      .from(studySessions)
+      .where(and(eq(studySessions.topicId, data.topicId), eq(studySessions.userId, userId)));
+
     const [session] = await tx
       .insert(studySessions)
-      .values({ ...data, userId, note: note ? sanitizeNote(note) : null })
+      .values({ ...data, userId, position: minPos - 1, note: note ? sanitizeNote(note) : null })
       .returning({ id: studySessions.id });
 
     if (links.length) {
@@ -248,6 +254,47 @@ export async function updateSession(formData: FormData): Promise<ActionResult> {
 
   if (!updated) return { ok: false, error: "Sesi tidak ditemukan" };
   refresh(topicId);
+  return { ok: true };
+}
+
+/**
+ * Simpan urutan sesi hasil drag & drop.
+ * `orderedIds` = semua ID sesi di topik ini, sesuai urutan baru (atas → bawah).
+ */
+export async function reorderSessions(topicId: number, orderedIds: number[]): Promise<ActionResult> {
+  const userId = await requireUser();
+  const parsed = z
+    .object({ topicId: id, orderedIds: z.array(id).min(1).max(1000) })
+    .safeParse({ topicId, orderedIds });
+  if (!parsed.success) return { ok: false, error: "Data urutan tidak valid" };
+  const ids = parsed.data.orderedIds;
+  if (new Set(ids).size !== ids.length) return { ok: false, error: "Data urutan tidak valid" };
+
+  // Pastikan semua ID memang sesi milik user ini di topik ini
+  const owned = await db
+    .select({ id: studySessions.id })
+    .from(studySessions)
+    .where(
+      and(
+        inArray(studySessions.id, ids),
+        eq(studySessions.topicId, parsed.data.topicId),
+        eq(studySessions.userId, userId),
+      ),
+    );
+  if (owned.length !== ids.length) return { ok: false, error: "Sesi tidak ditemukan" };
+
+  // Satu UPDATE untuk semua baris: position = urutan di array
+  const cases = sql.join(
+    // ::int wajib — tanpa cast, Postgres menganggap parameter sebagai text
+    ids.map((sid, i) => sql`when ${sid}::int then ${i}::int`),
+    sql` `,
+  );
+  await db
+    .update(studySessions)
+    .set({ position: sql`case ${studySessions.id} ${cases} end` })
+    .where(and(inArray(studySessions.id, ids), eq(studySessions.userId, userId)));
+
+  refresh(parsed.data.topicId);
   return { ok: true };
 }
 

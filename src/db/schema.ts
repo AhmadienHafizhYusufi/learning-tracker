@@ -66,6 +66,9 @@ export const studySessions = pgTable("study_sessions", {
   date: date("date").notNull(), // format YYYY-MM-DD
   durationMinutes: integer("duration_minutes").notNull(),
   note: text("note"), // HTML dari rich text editor (disanitasi saat disimpan)
+  // Urutan tampilan hasil drag & drop (kecil = di atas). Sesi lama bernilai 0,
+  // sehingga tetap diurutkan berdasarkan tanggal sampai user mengubah urutannya.
+  position: integer("position").notNull().default(0),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 }, (t) => [index("study_sessions_user_id_idx").on(t.userId)]);
 
