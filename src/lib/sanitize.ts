@@ -11,10 +11,14 @@ export function sanitizeNote(html: string): string | null {
     allowedTags: [
       "p", "br", "strong", "em", "u", "s", "code", "pre",
       "h2", "h3", "ul", "ol", "li", "blockquote", "hr", "span",
+      "table", "thead", "tbody", "tr", "th", "td", "colgroup", "col",
     ],
     allowedAttributes: {
       code: ["class"],
       span: ["class"],
+      // Sel gabungan (merge) — style/lebar kolom dari Word dsb. sengaja dibuang
+      th: ["colspan", "rowspan"],
+      td: ["colspan", "rowspan"],
     },
     allowedClasses: {
       code: [/^language-[\w-]+$/],
@@ -30,7 +34,7 @@ export function sanitizeNote(html: string): string | null {
 /** Ambil teks polos (untuk preview singkat, mis. di dashboard) */
 export function noteToText(html: string | null): string | null {
   if (!html) return null;
-  const text = sanitizeHtml(html.replace(/<\/(p|h2|h3|li|pre)>/g, " "), {
+  const text = sanitizeHtml(html.replace(/<\/(p|h2|h3|li|pre|td|th)>/g, " "), {
     allowedTags: [],
     allowedAttributes: {},
   })

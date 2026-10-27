@@ -195,3 +195,64 @@ body {
 [id] {
   scroll-margin-top: 5.5rem;
 }
+
+/* ---------- Tabel (editor & tampilan catatan) ---------- */
+.rte-content .tableWrapper,
+.note-content .table-scroll {
+  overflow-x: auto;
+  margin: 0.75em 0;
+}
+.rte-content table,
+.note-content table {
+  border-collapse: collapse;
+  width: 100%;
+  min-width: 100%;
+  table-layout: auto;
+  font-size: 0.95em;
+}
+.rte-content th,
+.rte-content td,
+.note-content th,
+.note-content td {
+  border: 1px solid var(--color-line);
+  padding: 0.4em 0.65em;
+  vertical-align: top;
+  text-align: left;
+  min-width: 4em;
+  position: relative;
+}
+.rte-content th,
+.note-content th {
+  background: color-mix(in srgb, var(--color-line) 45%, transparent);
+  font-weight: 600;
+}
+.note-content tbody tr:nth-child(even) td {
+  background: color-mix(in srgb, var(--color-line) 18%, transparent);
+}
+.rte-content th > p,
+.rte-content td > p,
+.note-content th > p,
+.note-content td > p {
+  margin: 0;
+}
+.rte-content th > * + *,
+.rte-content td > * + *,
+.note-content th > * + *,
+.note-content td > * + * {
+  margin-top: 0.4em;
+}
+/* Sel yang dipilih (drag / Shift+klik) saat akan digabung */
+.rte-content .selectedCell::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: color-mix(in srgb, var(--color-accent) 18%, transparent);
+  pointer-events: none;
+}
+/* Sel kosong tetap setinggi satu baris teks */
+.note-content th > p:empty::before,
+.note-content td > p:empty::before,
+.note-content th:empty::before,
+.note-content td:empty::before {
+  content: "\200b";
+}

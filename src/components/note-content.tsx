@@ -29,6 +29,11 @@ function highlightCodeBlocks(html: string) {
   );
 }
 
+/** Bungkus tabel supaya tabel lebar bisa di-scroll ke samping (terutama di HP) */
+function wrapTables(html: string) {
+  return html.replace(/<table/g, '<div class="table-scroll"><table').replace(/<\/table>/g, "</table></div>");
+}
+
 /**
  * Render catatan (HTML yang sudah disanitasi saat disimpan).
  * Catatan lama berupa teks polos tetap tampil normal.
@@ -40,7 +45,7 @@ export function NoteContent({ html, sessionId }: { html: string; sessionId?: num
     <div
       className="note-content text-sm"
       dangerouslySetInnerHTML={{
-        __html: highlightCodeBlocks(sessionId ? addHeadingIds(html, sessionId) : html),
+        __html: wrapTables(highlightCodeBlocks(sessionId ? addHeadingIds(html, sessionId) : html)),
       }}
     />
   );
