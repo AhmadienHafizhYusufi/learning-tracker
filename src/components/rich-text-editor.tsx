@@ -2,6 +2,7 @@
 
 import { CodeBlockLowlight } from "@tiptap/extension-code-block-lowlight";
 import { TableKit } from "@tiptap/extension-table";
+import { Caption } from "./caption-extension";
 import { Placeholder } from "@tiptap/extensions";
 import { EditorContent, useEditor, useEditorState, type Editor } from "@tiptap/react";
 import { DOMParser as PMDOMParser, Fragment, Slice, type ResolvedPos } from "@tiptap/pm/model";
@@ -55,6 +56,7 @@ export const RichTextEditor = forwardRef<
       // Tabel: Table + TableRow + TableHeader + TableCell.
       // Paste dari Word / Google Docs / Excel / Sheets / web otomatis jadi tabel (lewat HTML clipboard).
       TableKit.configure({ table: { resizable: false } }),
+      Caption,
       Placeholder.configure({ placeholder }),
     ],
     editorProps: {
@@ -154,6 +156,7 @@ const SHORTCUTS = {
   quote: ["Mod", "Shift", "B"],
   code: ["Mod", "E"],
   codeBlock: ["Mod", "Alt", "C"],
+  caption: ["Mod", "Alt", "9"],
   undo: ["Mod", "Z"],
   redo: ["Mod", "Shift", "Z"],
 } as const;
@@ -183,6 +186,7 @@ function Toolbar({ editor }: { editor: Editor }) {
       canUndo: e.can().undo(),
       canRedo: e.can().redo(),
       inTable: e.isActive("table"),
+      caption: e.isActive("caption"),
       canMerge: e.can().mergeCells(),
       canSplit: e.can().splitCell(),
     }),
@@ -211,6 +215,16 @@ function Toolbar({ editor }: { editor: Editor }) {
       </Btn>
       <Btn {...btn("h2")} label="Subjudul" hint="atau ketik ### di awal baris" active={s.h3} onClick={() => chain().toggleHeading({ level: 3 }).run()}>
         H2
+      </Btn>
+      <Btn
+        {...btn("caption")}
+        label="Caption (teks keterangan)"
+        hint="Teks kecil & redup, mis. keterangan di bawah tabel. Enter di akhir = kembali ke teks biasa"
+        active={s.caption}
+        wide
+        onClick={() => chain().toggleCaption().run()}
+      >
+        <span className="text-[11px] italic">Caption</span>
       </Btn>
       <Sep />
       <Btn {...btn("bullet")} label="Daftar poin" hint="atau ketik - di awal baris" active={s.bullet} onClick={() => chain().toggleBulletList().run()}>
@@ -363,6 +377,9 @@ function Btn({
         }
         aria-pressed={active}
         disabled={disabled}
+        // Jangan rebut fokus dari editor saat diklik mouse — kalau fokus pindah ke tombol,
+        // huruf yang diketik tepat setelah klik bisa hilang. (Tab/keyboard tetap bisa fokus.)
+        onMouseDown={(e) => e.preventDefault()}
         onClick={onClick}
         className={`inline-flex h-7 items-center justify-center gap-1 rounded-md text-sm transition disabled:opacity-35 ${
           wide ? "px-2" : "w-7"

@@ -256,3 +256,21 @@ body {
 .note-content td:empty::before {
   content: "\200b";
 }
+
+/* ---------- Caption (teks keterangan) ---------- */
+.rte-content p.caption,
+.note-content p.caption {
+  font-size: 0.8125em;
+  line-height: 1.5;
+  color: var(--color-muted);
+}
+/* Caption langsung di bawah tabel / blok kode: rapatkan seperti keterangan gambar */
+.rte-content .tableWrapper + p.caption,
+.rte-content pre + p.caption,
+.note-content .table-scroll + p.caption,
+.note-content pre + p.caption {
+  margin-top: -0.35em;
+}
+.rte-content p.caption.is-editor-empty:first-child::before {
+  font-size: 1em;
+}

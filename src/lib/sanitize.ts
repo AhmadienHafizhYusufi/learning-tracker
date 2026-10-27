@@ -14,6 +14,7 @@ export function sanitizeNote(html: string): string | null {
       "table", "thead", "tbody", "tr", "th", "td", "colgroup", "col",
     ],
     allowedAttributes: {
+      p: ["class"],
       code: ["class"],
       span: ["class"],
       // Sel gabungan (merge) — style/lebar kolom dari Word dsb. sengaja dibuang
@@ -21,6 +22,7 @@ export function sanitizeNote(html: string): string | null {
       td: ["colspan", "rowspan"],
     },
     allowedClasses: {
+      p: ["caption"],
       code: [/^language-[\w-]+$/],
       span: [/^hljs(-[\w-]+)?$/],
     },
