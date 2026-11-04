@@ -49,6 +49,10 @@ export function LogSessionForm(props: Props) {
   // oleh React ketika validasi server gagal.
   function onSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
+    if (editorRef.current?.isUploading()) {
+      setError("Tunggu sampai upload gambar selesai.");
+      return;
+    }
     const formData = new FormData(e.currentTarget);
     setError(null);
     startTransition(async () => {

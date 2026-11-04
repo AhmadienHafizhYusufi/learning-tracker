@@ -8,3 +8,6 @@ next-env.d.ts
 
 # Dump database — jangan di-commit
 *.sql
+
+# Gambar hasil upload saat development (tanpa Vercel Blob)
+/public/uploads

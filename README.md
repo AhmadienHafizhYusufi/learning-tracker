@@ -66,3 +66,4 @@ src/
 - Upgrade dari versi single-user: jalankan `npm run db:migrate-multiuser -- <username-github>` **sebelum** `npm run db:push`.
 - `npm run db:check` untuk mengecek koneksi database & isi tabel.
 - Database bisa di Postgres terkelola (Neon, Supabase, Railway) cukup dengan mengganti `DATABASE_URL`. Jalankan impor data / `pg_dump` lewat koneksi langsung, bukan pooler.
+- **Gambar di catatan** (tombol *Gambar*, paste Ctrl+V, atau drag & drop): dikecilkan ke maks 1600 px & dikompres jadi WebP di browser, lalu diupload lewat `/api/upload` ke **Vercel Blob**. Butuh env `BLOB_READ_WRITE_TOKEN` (Vercel → Storage → Create → Blob, akses *Public*, hubungkan ke project). Tanpa token saat `npm run dev`, gambar disimpan di `public/uploads/dev`. Format: PNG, JPG, WebP, GIF (maks 4 MB); hanya gambar dari penyimpanan aplikasi ini yang diterima di catatan. File gambar ikut dihapus saat gambar dihapus dari catatan, sesinya dihapus, atau topiknya dihapus.

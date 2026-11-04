@@ -34,6 +34,15 @@ function wrapTables(html: string) {
   return html.replace(/<table/g, '<div class="table-scroll"><table').replace(/<\/table>/g, "</table></div>");
 }
 
+/** Gambar: lazy-load, dan klik untuk membuka ukuran penuh di tab baru */
+function enhanceImages(html: string) {
+  return html.replace(
+    /<img([^>]*?)\ssrc="([^"]+)"([^>]*)>/g,
+    (_, a: string, src: string, b: string) =>
+      `<a href="${src}" target="_blank" rel="noopener noreferrer" class="note-image"><img${a} src="${src}"${b.replace(/\s*\/$/, "")} loading="lazy" decoding="async"></a>`,
+  );
+}
+
 /**
  * Render catatan (HTML yang sudah disanitasi saat disimpan).
  * Catatan lama berupa teks polos tetap tampil normal.
@@ -45,7 +54,7 @@ export function NoteContent({ html, sessionId }: { html: string; sessionId?: num
     <div
       className="note-content text-sm"
       dangerouslySetInnerHTML={{
-        __html: wrapTables(highlightCodeBlocks(sessionId ? addHeadingIds(html, sessionId) : html)),
+        __html: enhanceImages(wrapTables(highlightCodeBlocks(sessionId ? addHeadingIds(html, sessionId) : html))),
       }}
     />
   );

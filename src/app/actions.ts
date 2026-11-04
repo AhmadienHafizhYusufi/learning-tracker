@@ -3,6 +3,7 @@
 import { and, eq, inArray, sql } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
+import { after } from "next/server";
 import { z } from "zod";
 import { db } from "@/db";
 import {
@@ -13,6 +14,7 @@ import {
   topicStatus,
 } from "@/db/schema";
 import { todayISO } from "@/lib/format";
+import { deleteUnusedImages, extractImageUrls } from "@/lib/image-cleanup";
 import { sanitizeNote } from "@/lib/sanitize";
 import { getUserId } from "@/auth";
 
@@ -55,6 +57,26 @@ function parse<T extends z.ZodType>(schema: T, formData: FormData): z.infer<T> {
     throw new Error(result.error.issues.map((i) => i.message).join(", "));
   }
   return result.data;
+}
+
+/** Catatan (HTML) dari sesi-sesi milik user — untuk tahu gambar mana yang perlu dibersihkan */
+async function sessionNotes(userId: number, where: { sessionId?: number; topicId?: number }) {
+  const rows = await db
+    .select({ note: studySessions.note })
+    .from(studySessions)
+    .where(
+      and(
+        eq(studySessions.userId, userId),
+        where.sessionId ? eq(studySessions.id, where.sessionId) : undefined,
+        where.topicId ? eq(studySessions.topicId, where.topicId) : undefined,
+      ),
+    );
+  return rows.flatMap((r) => extractImageUrls(r.note));
+}
+
+/** Hapus file gambar yang tidak dipakai lagi — setelah respons terkirim, supaya UI tidak menunggu */
+function cleanupImagesLater(userId: number, urls: string[]) {
+  if (urls.length) after(() => deleteUnusedImages(userId, urls));
 }
 
 function refresh(topicId?: number) {
@@ -113,7 +135,9 @@ export async function setTopicStatus(formData: FormData) {
 export async function deleteTopic(formData: FormData) {
   const userId = await requireUser();
   const { id: topicId } = parse(z.object({ id }), formData);
+  const images = await sessionNotes(userId, { topicId });
   await db.delete(topics).where(and(eq(topics.id, topicId), eq(topics.userId, userId)));
+  cleanupImagesLater(userId, images);
   refresh();
   redirect("/topics");
 }
@@ -227,6 +251,7 @@ export async function updateSession(formData: FormData): Promise<ActionResult> {
   const links = parseSessionResources(formData);
   if ("error" in links) return { ok: false, error: links.error };
 
+  const oldImages = await sessionNotes(userId, { sessionId });
   const updated = await db.transaction(async (tx) => {
     const rows = await tx
       .update(studySessions)
@@ -253,6 +278,8 @@ export async function updateSession(formData: FormData): Promise<ActionResult> {
   });
 
   if (!updated) return { ok: false, error: "Sesi tidak ditemukan" };
+  // Gambar yang dihapus dari catatan → hapus juga file-nya
+  cleanupImagesLater(userId, oldImages);
   refresh(topicId);
   return { ok: true };
 }
@@ -301,9 +328,11 @@ export async function reorderSessions(topicId: number, orderedIds: number[]): Pr
 export async function deleteSession(formData: FormData) {
   const userId = await requireUser();
   const { id: sessionId, topicId } = parse(z.object({ id, topicId: id }), formData);
+  const images = await sessionNotes(userId, { sessionId });
   await db
     .delete(studySessions)
     .where(and(eq(studySessions.id, sessionId), eq(studySessions.userId, userId)));
+  cleanupImagesLater(userId, images);
   refresh(topicId);
 }
 

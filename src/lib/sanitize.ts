@@ -1,5 +1,6 @@
 import "server-only";
 import sanitizeHtml from "sanitize-html";
+import { isAllowedImageSrc } from "./note-image";
 
 /**
  * Bersihkan HTML dari rich text editor sebelum disimpan.
@@ -12,6 +13,7 @@ export function sanitizeNote(html: string): string | null {
       "p", "br", "strong", "em", "u", "s", "code", "pre",
       "h2", "h3", "ul", "ol", "li", "blockquote", "hr", "span",
       "table", "thead", "tbody", "tr", "th", "td", "colgroup", "col",
+      "img",
     ],
     allowedAttributes: {
       p: ["class"],
@@ -20,7 +22,10 @@ export function sanitizeNote(html: string): string | null {
       // Sel gabungan (merge) — style/lebar kolom dari Word dsb. sengaja dibuang
       th: ["colspan", "rowspan"],
       td: ["colspan", "rowspan"],
+      img: ["src", "alt"],
     },
+    // Gambar hanya dari penyimpanan aplikasi ini (Vercel Blob / folder upload lokal)
+    exclusiveFilter: (frame) => frame.tag === "img" && !isAllowedImageSrc(frame.attribs.src),
     allowedClasses: {
       p: ["caption"],
       code: [/^language-[\w-]+$/],
@@ -28,9 +33,9 @@ export function sanitizeNote(html: string): string | null {
     },
   }).trim();
 
-  // Editor kosong menghasilkan "<p></p>"
+  // Editor kosong menghasilkan "<p></p>" (catatan berisi gambar saja tetap disimpan)
   const textOnly = sanitizeHtml(clean, { allowedTags: [], allowedAttributes: {} }).trim();
-  return textOnly === "" ? null : clean;
+  return textOnly === "" && !clean.includes("<img") ? null : clean;
 }
 
 /** Ambil teks polos (untuk preview singkat, mis. di dashboard) */

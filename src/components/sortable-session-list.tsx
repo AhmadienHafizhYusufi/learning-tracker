@@ -103,6 +103,8 @@ export function SortableSessionList({
         )}
       </div>
       <DndContext
+        // id tetap → atribut aksesibilitas sama di server & browser (mencegah hydration mismatch)
+        id={`sesi-dnd-${topicId}`}
         sensors={sensors}
         collisionDetection={closestCenter}
         modifiers={[restrictToVerticalAxis, restrictToParentElement]}

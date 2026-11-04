@@ -1,15 +1,19 @@
 "use client";
 
 import { CodeBlockLowlight } from "@tiptap/extension-code-block-lowlight";
+import Image from "@tiptap/extension-image";
 import { TableKit } from "@tiptap/extension-table";
 import { Caption } from "./caption-extension";
 import { Placeholder } from "@tiptap/extensions";
 import { EditorContent, useEditor, useEditorState, type Editor } from "@tiptap/react";
 import { DOMParser as PMDOMParser, Fragment, Slice, type ResolvedPos } from "@tiptap/pm/model";
+import { NodeSelection } from "@tiptap/pm/state";
 import type { EditorView } from "@tiptap/pm/view";
 import StarterKit from "@tiptap/starter-kit";
 import { common, createLowlight } from "lowlight";
-import { forwardRef, useImperativeHandle, useState, type ReactNode } from "react";
+import { forwardRef, useImperativeHandle, useRef, useState, type ReactNode } from "react";
+import { isAllowedImageSrc } from "@/lib/note-image";
+import { isImageFile, uploadImage } from "@/lib/upload-image";
 
 const lowlight = createLowlight(common);
 
@@ -29,7 +33,52 @@ const LANGUAGES = [
   { value: "go", label: "Go" },
 ];
 
-export type RichTextEditorHandle = { clear: () => void };
+export type RichTextEditorHandle = {
+  clear: () => void;
+  /** true selama masih ada gambar yang sedang di-upload */
+  isUploading: () => boolean;
+};
+
+/**
+ * Gambar (block). Hanya gambar dari penyimpanan aplikasi ini yang dikenali —
+ * <img> dari situs lain / base64 hasil paste diabaikan (server juga membuangnya).
+ */
+const NoteImage = Image.extend({
+  parseHTML() {
+    return [
+      {
+        tag: "img[src]",
+        getAttrs: (el) => (isAllowedImageSrc((el as HTMLElement).getAttribute("src")) ? null : false),
+      },
+    ];
+  },
+}).configure({ inline: false, allowBase64: false });
+
+const ACCEPT_IMAGES = "image/png,image/jpeg,image/webp,image/gif";
+
+/**
+ * Setelah gambar disisipkan, gambarnya ter-select — kalau user langsung mengetik,
+ * gambar akan terganti teks. Pindahkan kursor ke awal baris di bawah gambar
+ * (buat paragraf kosong kalau di bawahnya bukan teks, mis. akhir catatan).
+ */
+function placeCursorAfterImage(ed: Editor) {
+  const { selection, doc } = ed.state;
+  if (!(selection instanceof NodeSelection) || selection.node.type.name !== "image") return;
+  const after = selection.to;
+  const next = doc.nodeAt(after);
+  if (next?.isTextblock) {
+    ed.commands.setTextSelection(after + 1);
+  } else {
+    ed.chain().insertContentAt(after, { type: "paragraph" }).setTextSelection(after + 1).run();
+  }
+}
+
+/** HTML clipboard berisi teks (bukan cuma <img>)? Copy dari Excel/Word ikut menyertakan
+ *  "foto" isi sel — dalam kasus itu yang ditempel teks/tabelnya, bukan fotonya. */
+function htmlHasText(html: string) {
+  const doc = new DOMParser().parseFromString(html, "text/html");
+  return (doc.body.textContent ?? "").trim() !== "";
+}
 
 /**
  * Editor catatan sederhana ala Word: heading, bold, italic, underline,
@@ -41,6 +90,48 @@ export const RichTextEditor = forwardRef<
   { name: string; placeholder?: string; initialContent?: string }
 >(function RichTextEditor({ name, placeholder, initialContent = "" }, ref) {
   const [html, setHtml] = useState(initialContent);
+  const [uploading, setUploading] = useState(0);
+  const [uploadError, setUploadError] = useState<string | null>(null);
+  const uploadingRef = useRef(0);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const editorRef = useRef<Editor | null>(null);
+
+  /**
+   * Upload gambar satu per satu lalu sisipkan.
+   * `pos` = posisi drop (kalau di-drag), selain itu di posisi kursor.
+   */
+  async function insertImages(files: File[], pos?: number) {
+    const images = files.filter(isImageFile);
+    if (!images.length) {
+      setUploadError("File yang dipilih bukan gambar");
+      return;
+    }
+    setUploadError(null);
+    for (const file of images) {
+      setUploading(++uploadingRef.current);
+      try {
+        const url = await uploadImage(file);
+        const ed = editorRef.current;
+        if (!ed || ed.isDestroyed) continue;
+        const base = file.name.replace(/\.[^.]+$/, "");
+        const node = { type: "image", attrs: { src: url, alt: /^image$/i.test(base) ? "" : base.slice(0, 120) } };
+        if (pos !== undefined) {
+          ed.chain().focus().insertContentAt(Math.min(pos, ed.state.doc.content.size), node).run();
+          pos = undefined; // gambar berikutnya menyusul setelahnya
+        } else {
+          ed.chain().focus().insertContent(node).run();
+        }
+        placeCursorAfterImage(ed);
+      } catch (err) {
+        setUploadError(`${file.name}: ${err instanceof Error ? err.message : "Gagal mengunggah"}`);
+      } finally {
+        setUploading(--uploadingRef.current);
+      }
+    }
+  }
+  // Handler paste/drop dibuat sekali oleh editor → panggil versi terbaru lewat ref
+  const insertImagesRef = useRef(insertImages);
+  insertImagesRef.current = insertImages;
 
   const editor = useEditor({
     immediatelyRender: false, // wajib di Next.js agar tidak hydration mismatch
@@ -57,6 +148,7 @@ export const RichTextEditor = forwardRef<
       // Paste dari Word / Google Docs / Excel / Sheets / web otomatis jadi tabel (lewat HTML clipboard).
       TableKit.configure({ table: { resizable: false } }),
       Caption,
+      NoteImage,
       Placeholder.configure({ placeholder }),
     ],
     editorProps: {
@@ -65,24 +157,111 @@ export const RichTextEditor = forwardRef<
       },
       // Dipakai hanya saat clipboard berisi teks polos (tanpa HTML)
       clipboardTextParser: parsePlainTextPaste,
+      // Paste screenshot / gambar dari clipboard
+      handlePaste: (_view, event) => {
+        const dt = event.clipboardData;
+        const files = [...(dt?.files ?? [])].filter(isImageFile);
+        if (!dt || !files.length) return false;
+        const htmlData = dt.getData("text/html");
+        if (htmlData ? htmlHasText(htmlData) : dt.getData("text/plain").trim() !== "") return false;
+        event.preventDefault();
+        void insertImagesRef.current(files);
+        return true;
+      },
+      // Drag file gambar dari komputer ke dalam editor
+      handleDrop: (view, event, _slice, moved) => {
+        if (moved) return false; // memindahkan isi editor sendiri → perilaku normal
+        const files = [...(event.dataTransfer?.files ?? [])].filter(isImageFile);
+        if (!files.length) return false;
+        event.preventDefault();
+        let pos = view.posAtCoords({ left: event.clientX, top: event.clientY })?.pos;
+        if (pos !== undefined) {
+          // Jangan memotong paragraf di tengah kata: taruh sebelum/sesudah paragrafnya
+          const $pos = view.state.doc.resolve(pos);
+          const text = $pos.parent;
+          if (text.isTextblock && $pos.depth > 0 && text.content.size > 0) {
+            pos = $pos.parentOffset < text.content.size / 2 ? $pos.before() : $pos.after();
+          }
+        }
+        void insertImagesRef.current(files, pos);
+        return true;
+      },
     },
     onUpdate: ({ editor }) => setHtml(editor.isEmpty ? "" : editor.getHTML()),
   });
+
+  editorRef.current = editor;
 
   useImperativeHandle(ref, () => ({
     clear: () => {
       editor?.commands.clearContent(true);
       setHtml("");
+      setUploadError(null);
     },
+    isUploading: () => uploadingRef.current > 0,
   }));
 
   return (
     // Tanpa overflow-hidden supaya tooltip tombol tidak terpotong
-    <div className="rounded-lg border border-line bg-paper transition focus-within:border-accent focus-within:ring-2 focus-within:ring-accent/20">
+    <div
+      className="rounded-lg border border-line bg-paper transition focus-within:border-accent focus-within:ring-2 focus-within:ring-accent/20"
+      // File di-drop di luar area teks (toolbar, tepi editor) → tetap disisipkan di akhir catatan,
+      // jangan sampai browser membuka file-nya dan isi form hilang
+      onDragOver={(e) => {
+        if (e.dataTransfer.types.includes("Files")) e.preventDefault();
+      }}
+      onDrop={(e) => {
+        if (e.defaultPrevented || !editor) return; // sudah ditangani editor
+        const files = [...e.dataTransfer.files];
+        if (!files.length) return;
+        e.preventDefault();
+        void insertImages(files, editor.state.doc.content.size);
+      }}
+    >
       <EditorContent editor={editor} />
+      {(uploading > 0 || uploadError) && (
+        <div role="status" className="flex items-center gap-2 border-t border-line px-3 py-1.5 text-xs">
+          {uploading > 0 && (
+            <span className="flex items-center gap-1.5 text-muted">
+              <span className="size-3 animate-spin rounded-full border-2 border-line border-t-accent" aria-hidden />
+              Mengunggah {uploading > 1 ? `${uploading} gambar` : "gambar"}…
+            </span>
+          )}
+          {uploadError && (
+            <>
+              <span className="text-danger">{uploadError}</span>
+              <button
+                type="button"
+                onClick={() => setUploadError(null)}
+                aria-label="Tutup pesan error"
+                className="ml-auto text-muted hover:text-ink"
+              >
+                ×
+              </button>
+            </>
+          )}
+        </div>
+      )}
       {/* Toolbar di bawah & sticky: tetap terlihat di bawah layar walau catatannya panjang */}
-      {editor ? <Toolbar editor={editor} /> : <div className="h-10 rounded-b-lg border-t border-line bg-card" />}
+      {editor ? (
+        <Toolbar editor={editor} onPickImage={() => fileInputRef.current?.click()} />
+      ) : (
+        <div className="h-10 rounded-b-lg border-t border-line bg-card" />
+      )}
       <input type="hidden" name={name} value={html} />
+      {/* Tanpa atribut name → file tidak ikut terkirim bersama form */}
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept={ACCEPT_IMAGES}
+        multiple
+        hidden
+        onChange={(e) => {
+          const files = [...(e.target.files ?? [])];
+          e.target.value = ""; // supaya file yang sama bisa dipilih lagi
+          if (files.length) void insertImages(files);
+        }}
+      />
     </div>
   );
 });
@@ -163,7 +342,7 @@ const SHORTCUTS = {
 
 type ShortcutKey = keyof typeof SHORTCUTS;
 
-function Toolbar({ editor }: { editor: Editor }) {
+function Toolbar({ editor, onPickImage }: { editor: Editor; onPickImage: () => void }) {
   // Toolbar hanya dirender di browser (setelah editor siap), jadi aman membaca navigator
   const isMac = typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform);
 
@@ -261,6 +440,17 @@ function Toolbar({ editor }: { editor: Editor }) {
       >
         <TableIcon />
         <span className="text-xs">Tabel</span>
+      </Btn>
+      <Btn
+        isMac={isMac}
+        label="Sisipkan gambar"
+        hint="atau paste (Ctrl+V) / drag file gambar ke editor. PNG, JPG, WebP, GIF — maks 4 MB"
+        disabled={s.codeBlock}
+        wide
+        onClick={onPickImage}
+      >
+        <ImageIcon />
+        <span className="text-xs">Gambar</span>
       </Btn>
       {s.codeBlock && (
         <select
@@ -420,6 +610,16 @@ function TableIcon() {
     <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" aria-hidden>
       <rect x="1.5" y="2.5" width="13" height="11" rx="1.5" />
       <path d="M1.5 6.5h13M1.5 10h13M6 6.5v7M10.5 6.5v7" />
+    </svg>
+  );
+}
+
+function ImageIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" aria-hidden>
+      <rect x="1.5" y="2.5" width="13" height="11" rx="1.5" />
+      <circle cx="5.5" cy="6.25" r="1.25" />
+      <path d="m2 12 3.8-3.6 2.7 2.4 2.2-2 3.3 3.2" strokeLinejoin="round" />
     </svg>
   );
 }
