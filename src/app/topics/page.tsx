@@ -2,6 +2,7 @@ import Link from "next/link";
 import { createTopic, setTopicStatus } from "@/app/actions";
 import type { TopicStatus } from "@/db/schema";
 import { topicStatus } from "@/db/schema";
+import { DeleteTopicButton } from "@/components/delete-topic-button";
 import { AutoSubmitSelect, SubmitButton } from "@/components/form-controls";
 import { TopicFields } from "@/components/topic-fields";
 import { formatDate, formatMinutes, STATUS_LABEL, STATUS_ORDER } from "@/lib/format";
@@ -108,7 +109,7 @@ export default async function TopicsPage({
                   {t.lastStudied && <span>terakhir {formatDate(t.lastStudied, { year: undefined })}</span>}
                 </span>
               </Link>
-              <div className="flex items-center gap-3">
+              <div className="flex items-center gap-2">
                 <form action={setTopicStatus}>
                   <input type="hidden" name="id" value={t.id} />
                   <AutoSubmitSelect
@@ -119,6 +120,7 @@ export default async function TopicsPage({
                     options={STATUS_ORDER.map((s) => ({ value: s, label: STATUS_LABEL[s] }))}
                   />
                 </form>
+                <DeleteTopicButton topic={t} />
               </div>
             </li>
           ))}

@@ -132,14 +132,28 @@ export async function setTopicStatus(formData: FormData) {
   refresh(topicId);
 }
 
-export async function deleteTopic(formData: FormData) {
+/**
+ * Hapus topik beserta semua sesi, resource, dan file gambarnya (FK on delete cascade).
+ * Dipanggil dari dialog konfirmasi (daftar topik & halaman topik).
+ * `goToList`: dihapus dari halaman topik itu sendiri → pindah ke daftar topik
+ * (halaman lamanya sudah tidak ada).
+ */
+export async function deleteTopic(topicId: number, goToList = false): Promise<ActionResult> {
   const userId = await requireUser();
-  const { id: topicId } = parse(z.object({ id }), formData);
-  const images = await sessionNotes(userId, { topicId });
-  await db.delete(topics).where(and(eq(topics.id, topicId), eq(topics.userId, userId)));
+  const parsed = id.safeParse(topicId);
+  if (!parsed.success) return { ok: false, error: "Topik tidak valid" };
+
+  const images = await sessionNotes(userId, { topicId: parsed.data });
+  const deleted = await db
+    .delete(topics)
+    .where(and(eq(topics.id, parsed.data), eq(topics.userId, userId)))
+    .returning({ id: topics.id });
+  if (!deleted.length) return { ok: false, error: "Topik tidak ditemukan atau sudah dihapus" };
+
   cleanupImagesLater(userId, images);
   refresh();
-  redirect("/topics");
+  if (goToList) redirect("/topics");
+  return { ok: true };
 }
 
 // ---------- Sesi belajar ----------

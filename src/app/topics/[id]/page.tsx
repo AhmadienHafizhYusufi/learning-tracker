@@ -2,11 +2,11 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import {
   deleteResource,
-  deleteTopic,
   toggleResource,
   updateTopic,
 } from "@/app/actions";
 import type { Resource } from "@/db/schema";
+import { DeleteTopicButton } from "@/components/delete-topic-button";
 import { ConfirmButton, SubmitButton } from "@/components/form-controls";
 import { LogSessionForm } from "@/components/log-session-form";
 import { NoteContent } from "@/components/note-content";
@@ -85,15 +85,13 @@ export default async function TopicDetailPage({ params }: { params: Promise<{ id
               <SubmitButton>Simpan perubahan</SubmitButton>
             </div>
           </form>
-          <form action={deleteTopic} className="mt-3 text-right">
-            <input type="hidden" name="id" value={topic.id} />
-            <ConfirmButton
-              message={`Hapus topik "${topic.title}" beserta semua sesi dan resource-nya?`}
-              className="text-xs text-danger hover:underline"
-            >
-              Hapus topik
-            </ConfirmButton>
-          </form>
+          <div className="mt-3 text-right">
+            <DeleteTopicButton
+              variant="link"
+              goToList
+              topic={{ id: topic.id, title: topic.title, sessionCount: sessions.length, resourceCount }}
+            />
+          </div>
         </details>
       </section>
 
