@@ -48,6 +48,16 @@ export function formatMinutes(total: number): string {
   return m === 0 ? `${h}j` : `${h}j ${m}m`;
 }
 
+/** URL aman untuk href: hanya http/https (data lama bisa berisi "javascript:" dsb.) */
+export function safeHref(url: string): string | undefined {
+  try {
+    const u = new URL(url);
+    return u.protocol === "http:" || u.protocol === "https:" ? u.href : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 export function hostOf(url: string): string {
   try {
     return new URL(url).hostname.replace(/^www\./, "");

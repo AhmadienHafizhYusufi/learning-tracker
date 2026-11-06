@@ -10,12 +10,13 @@ import { DeleteTopicButton } from "@/components/delete-topic-button";
 import { ConfirmButton, SubmitButton } from "@/components/form-controls";
 import { LogSessionForm } from "@/components/log-session-form";
 import { NoteContent } from "@/components/note-content";
+import { ShareTopic } from "@/components/share-topic";
 import { SortableSessionList } from "@/components/sortable-session-list";
 import { StatusBadge } from "@/components/status-badge";
 import { TableOfContents, type TocItem } from "@/components/table-of-contents";
 import { TopicFields } from "@/components/topic-fields";
 import { extractNoteHeadings, headingId } from "@/lib/headings";
-import { formatMinutes, hostOf, RESOURCE_LABEL } from "@/lib/format";
+import { formatMinutes, hostOf, RESOURCE_LABEL, safeHref } from "@/lib/format";
 import { getCategories, getTopic } from "@/lib/queries";
 import { requirePageUser } from "@/lib/session";
 
@@ -72,6 +73,8 @@ export default async function TopicDetailPage({ params }: { params: Promise<{ id
             <Metric label="Resource" value={`${resourceDone}/${resourceCount}`} />
           </dl>
         </div>
+
+        <ShareTopic topicId={topic.id} initialPublic={topic.isPublic} initialPublicId={topic.publicId} />
 
         <details className="group mt-4 border-t border-line pt-4">
           <summary className="cursor-pointer list-none text-sm text-muted hover:text-ink">
@@ -176,7 +179,7 @@ function ResourceList({
             </button>
           </form>
           <a
-            href={r.url}
+            href={safeHref(r.url)}
             target="_blank"
             rel="noopener noreferrer"
             className={`min-w-0 flex-1 ${r.done ? "text-muted line-through decoration-line" : ""}`}

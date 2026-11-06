@@ -1,5 +1,6 @@
 "use server";
 
+import { randomBytes } from "node:crypto";
 import { and, eq, inArray, sql } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
@@ -133,6 +134,34 @@ export async function setTopicStatus(formData: FormData) {
 }
 
 /**
+ * Nyalakan/matikan halaman publik read-only sebuah topik (/p/<publicId>).
+ * publicId dibuat sekali saat pertama dinyalakan, lalu dipakai terus.
+ */
+export async function setTopicPublic(
+  topicId: number,
+  makePublic: boolean,
+): Promise<{ ok: true; publicId: string | null } | { ok: false; error: string }> {
+  const userId = await requireUser();
+  const parsed = id.safeParse(topicId);
+  if (!parsed.success || typeof makePublic !== "boolean") return { ok: false, error: "Data tidak valid" };
+
+  const [row] = await db
+    .update(topics)
+    .set({
+      isPublic: makePublic,
+      // Isi publicId hanya kalau belum ada (12 karakter acak, tidak bisa ditebak)
+      publicId: sql`coalesce(${topics.publicId}, ${randomBytes(9).toString("base64url")})`,
+    })
+    .where(and(eq(topics.id, parsed.data), eq(topics.userId, userId)))
+    .returning({ publicId: topics.publicId });
+  if (!row) return { ok: false, error: "Topik tidak ditemukan" };
+
+  refresh(parsed.data);
+  if (row.publicId) revalidatePath(`/p/${row.publicId}`);
+  return { ok: true, publicId: row.publicId };
+}
+
+/**
  * Hapus topik beserta semua sesi, resource, dan file gambarnya (FK on delete cascade).
  * Dipanggil dari dialog konfirmasi (daftar topik & halaman topik).
  * `goToList`: dihapus dari halaman topik itu sendiri → pindah ke daftar topik
@@ -172,7 +201,8 @@ const sessionSchema = z.object({
 
 const sessionResourceSchema = z.object({
   title: z.string().trim().min(1, "Judul resource wajib diisi").max(200),
-  url: z.url("URL resource tidak valid"),
+  // Hanya http/https — "javascript:" dsb. ditolak (bisa jadi XSS di halaman publik)
+  url: z.url({ protocol: /^https?$/, error: "URL resource harus diawali http:// atau https://" }),
   type: z.enum(resourceType.enumValues).default("other"),
 });
 

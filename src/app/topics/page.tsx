@@ -96,7 +96,17 @@ export default async function TopicsPage({
           {filtered.map((t) => (
             <li key={t.id} className="flex flex-wrap items-center gap-x-4 gap-y-2 p-4">
               <Link href={`/topics/${t.id}`} className="group min-w-0 flex-1 basis-60">
-                <span className="block font-medium group-hover:text-accent">{t.title}</span>
+                <span className="flex items-center gap-2">
+                  <span className="font-medium group-hover:text-accent">{t.title}</span>
+                  {t.isPublic && (
+                    <span
+                      title="Bisa dilihat orang lain lewat link"
+                      className="rounded-full bg-accent-soft px-2 py-0.5 text-[11px] font-medium text-accent"
+                    >
+                      Publik
+                    </span>
+                  )}
+                </span>
                 <span className="mt-0.5 flex flex-wrap gap-x-3 text-xs text-muted">
                   {t.category && <span>{t.category}</span>}
                   <span className="num">{formatMinutes(t.totalMinutes)}</span>

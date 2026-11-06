@@ -1,7 +1,7 @@
 import "server-only";
 import { and, asc, desc, eq, gte, sql } from "drizzle-orm";
 import { db } from "@/db";
-import { resources, studySessions, topics, type TopicStatus } from "@/db/schema";
+import { resources, studySessions, topics, users, type TopicStatus } from "@/db/schema";
 import { shiftDate, todayISO } from "./format";
 import { noteToText } from "./sanitize";
 import { computeStreak, dailyTotals } from "./stats";
@@ -32,6 +32,7 @@ export async function getTopicsWithStats(userId: number, status?: TopicStatus) {
       title: topics.title,
       category: topics.category,
       status: topics.status,
+      isPublic: topics.isPublic,
       updatedAt: topics.updatedAt,
       ...topicAggregates,
     })
@@ -173,3 +174,56 @@ export async function getDashboard(userId: number) {
   };
 }
 
+
+/*
+ * ---------- Halaman publik (read-only, tanpa login) ----------
+ * Pengecualian aturan di atas: dicari lewat publicId acak, BUKAN userId,
+ * dan hanya kalau pemiliknya menyalakan "Publik". Hanya kolom yang boleh
+ * dilihat orang lain yang diambil — tanpa tanggal, durasi, atau statistik.
+ */
+export async function getPublicTopic(publicId: string) {
+  if (!/^[A-Za-z0-9_-]{8,32}$/.test(publicId)) return null;
+  const [topic] = await db
+    .select({
+      id: topics.id,
+      userId: topics.userId,
+      title: topics.title,
+      description: topics.description,
+      category: topics.category,
+      status: topics.status,
+      ownerName: users.name,
+      ownerLogin: users.login,
+      ownerImage: users.image,
+    })
+    .from(topics)
+    .innerJoin(users, eq(users.id, topics.userId))
+    .where(and(eq(topics.publicId, publicId), eq(topics.isPublic, true)));
+  if (!topic) return null;
+
+  const [sessions, links] = await Promise.all([
+    db
+      .select({ id: studySessions.id, title: studySessions.title, note: studySessions.note })
+      .from(studySessions)
+      .where(and(eq(studySessions.topicId, topic.id), eq(studySessions.userId, topic.userId)))
+      .orderBy(asc(studySessions.position), desc(studySessions.date), desc(studySessions.createdAt)),
+    db
+      .select({ id: resources.id, sessionId: resources.sessionId, title: resources.title, url: resources.url, type: resources.type })
+      .from(resources)
+      .where(and(eq(resources.topicId, topic.id), eq(resources.userId, topic.userId)))
+      .orderBy(asc(resources.createdAt)),
+  ]);
+
+  const bySession = new Map<number, typeof links>();
+  const unattached: typeof links = [];
+  for (const r of links) {
+    if (r.sessionId == null) unattached.push(r);
+    else bySession.set(r.sessionId, [...(bySession.get(r.sessionId) ?? []), r]);
+  }
+
+  return {
+    topic,
+    sessions: sessions.map((s) => ({ ...s, resources: bySession.get(s.id) ?? [] })),
+    unattachedResources: unattached,
+    resourceCount: links.length,
+  };
+}

@@ -2,6 +2,7 @@ import {
   boolean,
   date,
   index,
+  uniqueIndex,
   integer,
   pgEnum,
   pgTable,
@@ -53,7 +54,15 @@ export const topics = pgTable("topics", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   completedAt: timestamp("completed_at", { withTimezone: true }),
-}, (t) => [index("topics_user_id_idx").on(t.userId)]);
+  // Berbagi read-only: /p/<publicId>. publicId acak (tidak bisa ditebak) dibuat saat pertama
+  // kali dijadikan publik dan tetap sama walau publik dimatikan lalu dinyalakan lagi.
+  isPublic: boolean("is_public").notNull().default(false),
+  publicId: text("public_id"),
+}, (t) => [
+  index("topics_user_id_idx").on(t.userId),
+  // Unique index (bukan unique constraint) → `db:push` tidak menawarkan truncate tabel
+  uniqueIndex("topics_public_id_idx").on(t.publicId),
+]);
 
 /** Log tiap sesi belajar */
 export const studySessions = pgTable("study_sessions", {

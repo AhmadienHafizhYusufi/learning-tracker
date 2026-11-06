@@ -1,5 +1,6 @@
 // Next.js 16: "proxy" adalah pengganti "middleware".
-// Semua halaman & server action wajib login, kecuali halaman login dan endpoint Auth.js.
+// Semua halaman & server action wajib login, kecuali halaman login, endpoint Auth.js,
+// halaman publik read-only (/p/...) dan file upload lokal saat development (/uploads/...).
 import { NextResponse } from "next/server";
 import { auth } from "@/auth";
 
@@ -12,5 +13,5 @@ export default auth((req) => {
 });
 
 export const config = {
-  matcher: ["/((?!api/auth|login|_next/static|_next/image|favicon.ico).*)"],
+  matcher: ["/((?!api/auth|login|p/|uploads/|_next/static|_next/image|favicon.ico).*)"],
 };
